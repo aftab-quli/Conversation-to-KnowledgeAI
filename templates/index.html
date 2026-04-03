@@ -12,11 +12,12 @@
       background: #0f1117;
       color: #e8e8e8;
       min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
       padding: 40px 24px;
+    }
+
+    .wrapper {
+      max-width: 620px;
+      margin: 0 auto;
     }
 
     .logo {
@@ -26,6 +27,7 @@
       text-transform: uppercase;
       color: #666;
       margin-bottom: 24px;
+      text-align: center;
     }
 
     h1 {
@@ -45,7 +47,6 @@
       font-size: 15px;
       text-align: center;
       margin-bottom: 40px;
-      max-width: 500px;
     }
 
     .card {
@@ -53,8 +54,6 @@
       border: 1px solid #2a2d3a;
       border-radius: 16px;
       padding: 32px;
-      width: 100%;
-      max-width: 600px;
       box-shadow: 0 24px 64px rgba(0,0,0,0.4);
     }
 
@@ -62,339 +61,152 @@
     .drop-zone {
       border: 2px dashed #3a3d4a;
       border-radius: 12px;
-      padding: 40px 24px;
+      padding: 32px 24px;
       text-align: center;
       cursor: pointer;
       transition: all 0.2s;
       margin-bottom: 24px;
       position: relative;
     }
-
-    .drop-zone:hover, .drop-zone.dragover {
-      border-color: #7c3aed;
-      background: rgba(124, 58, 237, 0.05);
-    }
-
-    .drop-zone.has-file {
-      border-color: #22c55e;
-      background: rgba(34, 197, 94, 0.05);
-    }
-
-    .drop-zone input[type="file"] {
-      position: absolute;
-      inset: 0;
-      opacity: 0;
-      cursor: pointer;
-    }
-
-    .drop-icon { font-size: 36px; margin-bottom: 12px; }
-
-    .drop-text {
-      font-size: 15px;
-      color: #888;
-      line-height: 1.6;
-    }
-
+    .drop-zone:hover, .drop-zone.dragover { border-color: #7c3aed; background: rgba(124, 58, 237, 0.05); }
+    .drop-zone.has-file { border-color: #22c55e; background: rgba(34, 197, 94, 0.05); }
+    .drop-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .drop-icon { font-size: 36px; margin-bottom: 8px; }
+    .drop-text { font-size: 15px; color: #888; line-height: 1.6; }
     .drop-text strong { color: #a78bfa; }
-
-    .file-name {
-      font-size: 14px;
-      color: #22c55e;
-      font-weight: 600;
-      margin-top: 8px;
-    }
+    .file-name { font-size: 14px; color: #22c55e; font-weight: 600; margin-top: 8px; }
 
     /* Fields */
     .field { margin-bottom: 20px; }
-
-    label {
-      display: block;
-      font-size: 13px;
-      font-weight: 600;
-      color: #999;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
-      margin-bottom: 8px;
-    }
-
+    label { display: block; font-size: 13px; font-weight: 600; color: #999; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 8px; }
+    .field-hint { font-size: 12px; color: #555; margin-bottom: 8px; }
     textarea, select {
-      width: 100%;
-      background: #0f1117;
-      border: 1px solid #2a2d3a;
-      border-radius: 10px;
-      padding: 14px 16px;
-      font-size: 15px;
-      color: #e8e8e8;
-      outline: none;
-      transition: border-color 0.2s;
-      font-family: inherit;
-      resize: vertical;
+      width: 100%; background: #0f1117; border: 1px solid #2a2d3a; border-radius: 10px;
+      padding: 14px 16px; font-size: 15px; color: #e8e8e8; outline: none;
+      transition: border-color 0.2s; font-family: inherit; resize: vertical;
     }
-
     textarea:focus, select:focus { border-color: #7c3aed; }
     textarea::placeholder { color: #444; }
-    select option { background: #1a1d27; }
 
     /* Doc types */
-    .doc-types {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 10px;
-    }
-
+    .doc-types { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
     .doc-type {
-      background: #0f1117;
-      border: 1px solid #2a2d3a;
-      border-radius: 10px;
-      padding: 14px 8px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.2s;
-      user-select: none;
+      background: #0f1117; border: 1px solid #2a2d3a; border-radius: 10px;
+      padding: 14px 8px; text-align: center; cursor: pointer; transition: all 0.2s; user-select: none;
     }
-
     .doc-type:hover { border-color: #7c3aed; }
-
-    .doc-type.selected {
-      border-color: #7c3aed;
-      background: #1e1333;
-    }
-
+    .doc-type.selected { border-color: #7c3aed; background: #1e1333; }
     .doc-type .icon { font-size: 22px; margin-bottom: 6px; }
     .doc-type .name { font-size: 12px; font-weight: 600; color: #ccc; }
     .doc-type.selected .name { color: #a78bfa; }
 
     /* Button */
     button#generateBtn {
-      width: 100%;
-      background: linear-gradient(135deg, #7c3aed, #5b21b6);
-      border: none;
-      border-radius: 10px;
-      padding: 16px;
-      font-size: 16px;
-      font-weight: 600;
-      color: white;
-      cursor: pointer;
-      transition: opacity 0.2s, transform 0.1s;
-      margin-top: 8px;
+      width: 100%; background: linear-gradient(135deg, #7c3aed, #5b21b6); border: none;
+      border-radius: 10px; padding: 16px; font-size: 16px; font-weight: 600;
+      color: white; cursor: pointer; transition: opacity 0.2s, transform 0.1s; margin-top: 8px;
     }
-
     button#generateBtn:hover { opacity: 0.9; }
     button#generateBtn:active { transform: scale(0.98); }
     button#generateBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* Progress */
     #progressSection { margin-top: 24px; display: none; }
-
-    .progress-bar-track {
-      background: #0f1117;
-      border-radius: 99px;
-      height: 6px;
-      overflow: hidden;
-      margin-bottom: 12px;
-    }
-
-    .progress-bar-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #7c3aed, #a78bfa);
-      border-radius: 99px;
-      width: 0%;
-      transition: width 0.6s ease;
-    }
-
-    .step-text {
-      font-size: 14px;
-      color: #888;
-      text-align: center;
-    }
+    .progress-bar-track { background: #0f1117; border-radius: 99px; height: 6px; overflow: hidden; margin-bottom: 12px; }
+    .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #7c3aed, #a78bfa); border-radius: 99px; width: 0%; transition: width 0.6s ease; }
+    .step-text { font-size: 14px; color: #888; text-align: center; }
 
     /* Results */
     #resultsSection { margin-top: 24px; display: none; }
-
-    .result-header {
-      font-size: 13px;
-      font-weight: 600;
-      color: #666;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 12px;
-    }
-
-    .result-stats {
-      display: flex;
-      gap: 12px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-    }
-
-    .stat-badge {
-      display: inline-block;
-      background: #1e1333;
-      border: 1px solid #4c1d95;
-      border-radius: 99px;
-      padding: 4px 14px;
-      font-size: 12px;
-      color: #a78bfa;
-    }
-
-    .file-card {
-      background: #0f1117;
-      border: 1px solid #2a2d3a;
-      border-radius: 10px;
-      padding: 16px 18px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
+    .result-header { font-size: 13px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+    .result-stats { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+    .stat-badge { display: inline-block; background: #1e1333; border: 1px solid #4c1d95; border-radius: 99px; padding: 4px 14px; font-size: 12px; color: #a78bfa; }
+    .file-card { background: #0f1117; border: 1px solid #2a2d3a; border-radius: 10px; padding: 16px 18px; display: flex; align-items: center; justify-content: space-between; }
     .file-info { display: flex; align-items: center; gap: 12px; }
     .file-icon { font-size: 24px; }
     .file-name-result { font-size: 14px; font-weight: 600; color: #e8e8e8; }
     .file-meta { font-size: 12px; color: #666; margin-top: 2px; }
-
     .download-btn {
-      background: #1e1333;
-      border: 1px solid #7c3aed;
-      border-radius: 8px;
-      padding: 10px 20px;
-      font-size: 14px;
-      font-weight: 600;
-      color: #a78bfa;
-      cursor: pointer;
-      text-decoration: none;
-      transition: background 0.2s;
-      white-space: nowrap;
+      background: #1e1333; border: 1px solid #7c3aed; border-radius: 8px; padding: 10px 20px;
+      font-size: 14px; font-weight: 600; color: #a78bfa; cursor: pointer;
+      text-decoration: none; transition: background 0.2s; white-space: nowrap;
     }
-
     .download-btn:hover { background: #2d1f4e; }
 
     /* Error */
-    .error-box {
-      background: #1f0f0f;
-      border: 1px solid #5c2626;
-      border-radius: 10px;
-      padding: 16px;
-      color: #f87171;
-      font-size: 14px;
-      margin-top: 20px;
-      display: none;
-    }
+    .error-box { background: #1f0f0f; border: 1px solid #5c2626; border-radius: 10px; padding: 16px; color: #f87171; font-size: 14px; margin-top: 20px; display: none; }
   </style>
 </head>
 <body>
 
-  <div class="logo">vic.ai · vicsherlock</div>
+  <div class="wrapper">
+    <div class="logo">vic.ai &middot; vicsherlock</div>
+    <h1>VicSherlock</h1>
+    <p class="subtitle">Drop a video recording. Get a complete step-by-step guide with screenshots &mdash; in minutes.</p>
 
-  <h1>VicSherlock</h1>
-  <p class="subtitle">Drop a video recording. Get a complete step-by-step guide with screenshots — in minutes.</p>
+    <div class="card">
 
-  <div class="card">
-
-    <!-- Video Upload -->
-    <div class="drop-zone" id="dropZone">
-      <input type="file" id="videoInput" accept="video/*" />
-      <div class="drop-icon">🎬</div>
-      <div class="drop-text">
-        <strong>Drop your video here</strong> or click to browse<br>
-        MP4, MOV, AVI, MKV, WebM — up to 500MB
+      <!-- Video Upload -->
+      <div class="drop-zone" id="dropZone">
+        <input type="file" id="videoInput" accept="video/*" />
+        <div class="drop-icon">🎬</div>
+        <div class="drop-text">
+          <strong>Drop your video here</strong> or click to browse<br>
+          MP4, MOV, AVI, MKV, WebM &mdash; up to 500MB
+        </div>
+        <div class="file-name" id="fileName"></div>
       </div>
-      <div class="file-name" id="fileName"></div>
-    </div>
 
-    <!-- Transcription Section (appears after file upload) -->
-    <div id="transcriptionSection" style="display: none; margin-bottom: 24px;">
-      <div style="margin-bottom: 16px;">
-        <label>Video Transcript</label>
-        <p style="font-size: 13px; color: #666; margin-bottom: 12px;">
-          Use browser-based transcription or enter manually.
-        </p>
-        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-          <button id="transcribeBtn" type="button" style="
-            flex: 1;
-            background: #1e1333;
-            border: 1px solid #7c3aed;
-            border-radius: 10px;
-            padding: 12px 16px;
-            font-size: 14px;
-            font-weight: 600;
-            color: #a78bfa;
-            cursor: pointer;
-            transition: background 0.2s;
-          " onclick="startBrowserTranscription()" disabled>
-            🎙 Transcribe in Browser
-          </button>
-          <button id="stopTranscribeBtn" type="button" style="
-            display: none;
-            flex: 1;
-            background: #5c2626;
-            border: 1px solid #f87171;
-            border-radius: 10px;
-            padding: 12px 16px;
-            font-size: 14px;
-            font-weight: 600;
-            color: #f87171;
-            cursor: pointer;
-            transition: background 0.2s;
-          " onclick="stopBrowserTranscription()">
-            ⏹ Stop
-          </button>
-        </div>
-        <div id="transcriptionStatus" style="
-          display: none;
-          font-size: 13px;
-          color: #a78bfa;
-          margin-bottom: 12px;
-          padding: 8px 12px;
-          background: #1e1333;
-          border-radius: 8px;
-          border: 1px solid #4c1d95;
-        "></div>
+      <!-- Transcript -->
+      <div class="field">
+        <label>Transcript</label>
+        <div class="field-hint">Paste the conversation or meeting transcript here. VicSherlock will extract the key steps.</div>
+        <textarea id="transcript" rows="5" placeholder="Paste your video transcript, Slack conversation, or Zoom meeting notes here..."></textarea>
       </div>
-      <textarea id="transcript" rows="5" placeholder="Transcript will appear here..."></textarea>
-    </div>
 
-    <!-- Instructions -->
-    <div class="field">
-      <label>Instructions</label>
-      <textarea id="instructions" rows="3" placeholder="e.g. Create a step-by-step guide for implementing VicPay payments..."></textarea>
-    </div>
+      <!-- Instructions -->
+      <div class="field">
+        <label>Instructions</label>
+        <textarea id="instructions" rows="3" placeholder="e.g. Create a step-by-step guide for implementing VicPay payments..."></textarea>
+      </div>
 
-    <!-- Doc Type -->
-    <div class="field">
-      <label>Document Type</label>
-      <div class="doc-types">
-        <div class="doc-type selected" data-value="step-by-step" onclick="selectType(this)">
-          <div class="icon">📋</div>
-          <div class="name">Step-by-Step</div>
-        </div>
-        <div class="doc-type" data-value="faq" onclick="selectType(this)">
-          <div class="icon">❓</div>
-          <div class="name">FAQ</div>
-        </div>
-        <div class="doc-type" data-value="troubleshooting" onclick="selectType(this)">
-          <div class="icon">🔧</div>
-          <div class="name">Troubleshoot</div>
+      <!-- Doc Type -->
+      <div class="field">
+        <label>Document Type</label>
+        <div class="doc-types">
+          <div class="doc-type selected" data-value="step-by-step" onclick="selectType(this)">
+            <div class="icon">📋</div>
+            <div class="name">Step-by-Step</div>
+          </div>
+          <div class="doc-type" data-value="faq" onclick="selectType(this)">
+            <div class="icon">❓</div>
+            <div class="name">FAQ</div>
+          </div>
+          <div class="doc-type" data-value="troubleshooting" onclick="selectType(this)">
+            <div class="icon">🔧</div>
+            <div class="name">Troubleshoot</div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <button id="generateBtn" onclick="generate()">🔍 Generate Guide</button>
+      <button id="generateBtn" onclick="generate()">🔍 Generate Guide</button>
 
-    <div id="progressSection">
-      <div class="progress-bar-track">
-        <div class="progress-bar-fill" id="progressBar"></div>
+      <div id="progressSection">
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progressBar"></div>
+        </div>
+        <div class="step-text" id="stepText">Starting...</div>
       </div>
-      <div class="step-text" id="stepText">Starting...</div>
+
+      <div class="error-box" id="errorBox"></div>
+
+      <div id="resultsSection">
+        <div class="result-stats" id="resultStats"></div>
+        <div class="result-header">Generated Document</div>
+        <div id="fileCard"></div>
+      </div>
+
     </div>
-
-    <div class="error-box" id="errorBox"></div>
-
-    <div id="resultsSection">
-      <div class="result-stats" id="resultStats"></div>
-      <div class="result-header">Generated Document</div>
-      <div id="fileCard"></div>
-    </div>
-
   </div>
 
   <script>
@@ -402,45 +214,21 @@
     let currentJobId = null;
     let pollInterval = null;
 
-    // Drag and drop
     const dropZone = document.getElementById('dropZone');
     const videoInput = document.getElementById('videoInput');
 
-    dropZone.addEventListener('dragover', e => {
-      e.preventDefault();
-      dropZone.classList.add('dragover');
-    });
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
     dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
     dropZone.addEventListener('drop', e => {
-      e.preventDefault();
-      dropZone.classList.remove('dragover');
+      e.preventDefault(); dropZone.classList.remove('dragover');
       if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
     });
-    videoInput.addEventListener('change', e => {
-      if (e.target.files.length) handleFile(e.target.files[0]);
-    });
+    videoInput.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
 
     function handleFile(file) {
       selectedFile = file;
       dropZone.classList.add('has-file');
       document.getElementById('fileName').textContent = file.name + ' (' + formatSize(file.size) + ')';
-
-      // Show transcription section and enable transcribe button if speech API is available
-      const transcriptionSection = document.getElementById('transcriptionSection');
-      transcriptionSection.style.display = 'block';
-
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const transcribeBtn = document.getElementById('transcribeBtn');
-      transcribeBtn.disabled = !SpeechRecognition;
-
-      if (!SpeechRecognition) {
-        const status = document.getElementById('transcriptionStatus');
-        status.style.display = 'block';
-        status.textContent = 'Speech API not supported in this browser. Please enter transcript manually.';
-        status.style.background = '#5c2626';
-        status.style.borderColor = '#f87171';
-        status.style.color = '#f87171';
-      }
     }
 
     function formatSize(bytes) {
@@ -472,6 +260,9 @@
       const instructions = document.getElementById('instructions').value.trim();
       if (!instructions) { alert('Please provide instructions for the guide.'); return; }
 
+      const transcript = document.getElementById('transcript').value.trim();
+      if (!transcript) { alert('Please paste a transcript. VicSherlock needs the conversation text to generate a guide.'); return; }
+
       // Reset UI
       document.getElementById('errorBox').style.display = 'none';
       document.getElementById('resultsSection').style.display = 'none';
@@ -484,21 +275,12 @@
       formData.append('video', selectedFile);
       formData.append('instructions', instructions);
       formData.append('doc_type', getSelectedType());
-
-      // Include transcript if available
-      const transcript = document.getElementById('transcript').value.trim();
-      if (transcript) {
-        formData.append('transcript', transcript);
-      }
+      formData.append('transcript', transcript);
 
       try {
-        const res = await fetch('/upload', {
-          method: 'POST',
-          body: formData
-        });
+        const res = await fetch('/upload', { method: 'POST', body: formData });
         const data = await res.json();
         if (data.error) { showError(data.error); return; }
-
         currentJobId = data.job_id;
         pollInterval = setInterval(pollStatus, 2000);
       } catch (e) {
@@ -511,7 +293,6 @@
       try {
         const res = await fetch('/status/' + currentJobId);
         const job = await res.json();
-
         const progress = job.progress || 0;
         document.getElementById('progressBar').style.width = progress + '%';
         document.getElementById('stepText').textContent = job.step || 'Working...';
@@ -535,14 +316,12 @@
       document.getElementById('progressSection').style.display = 'none';
       document.getElementById('resultsSection').style.display = 'block';
 
-      // Stats
       const stats = document.getElementById('resultStats');
       stats.innerHTML = '';
       if (job.step_count) stats.innerHTML += `<span class="stat-badge">${job.step_count} steps</span>`;
       if (job.screenshot_count) stats.innerHTML += `<span class="stat-badge">${job.screenshot_count} screenshots</span>`;
       stats.innerHTML += `<span class="stat-badge">Ready to download</span>`;
 
-      // File card
       const card = document.getElementById('fileCard');
       const file = job.file;
       card.innerHTML = `
@@ -557,129 +336,6 @@
           <a class="download-btn" href="/download/${file.filename}" download>⬇ Download</a>
         </div>
       `;
-    }
-
-    // ===== Browser-based transcription using Web Speech API =====
-    let currentRecognition = null;
-    let isTranscribing = false;
-
-    function startBrowserTranscription() {
-      if (!selectedFile) {
-        alert('Please select a video file first.');
-        return;
-      }
-
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRecognition) {
-        showTranscriptionError('Speech Recognition API not supported in this browser.');
-        return;
-      }
-
-      isTranscribing = true;
-      document.getElementById('transcribeBtn').style.display = 'none';
-      document.getElementById('stopTranscribeBtn').style.display = 'block';
-
-      const status = document.getElementById('transcriptionStatus');
-      status.style.display = 'block';
-      status.textContent = 'Starting transcription... playing video audio';
-      status.style.background = '#1e1333';
-      status.style.borderColor = '#4c1d95';
-      status.style.color = '#a78bfa';
-
-      // Create a video element to play the audio
-      const videoUrl = URL.createObjectURL(selectedFile);
-      const video = document.createElement('video');
-      video.src = videoUrl;
-      video.style.display = 'none';
-      document.body.appendChild(video);
-
-      // Set up speech recognition
-      currentRecognition = new SpeechRecognition();
-      currentRecognition.continuous = true;
-      currentRecognition.interimResults = true;
-      currentRecognition.language = 'en-US';
-
-      let finalTranscript = '';
-      let interimTranscript = '';
-
-      currentRecognition.onstart = () => {
-        status.textContent = 'Listening... ';
-      };
-
-      currentRecognition.onresult = (event) => {
-        interimTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            finalTranscript += transcript + ' ';
-          } else {
-            interimTranscript += transcript;
-          }
-        }
-
-        // Update textarea with results
-        document.getElementById('transcript').value = finalTranscript + interimTranscript;
-
-        // Update status
-        status.textContent = 'Listening... ' + (finalTranscript.length > 0 ? `${finalTranscript.split(' ').length} words captured` : 'waiting for speech');
-      };
-
-      currentRecognition.onerror = (event) => {
-        status.style.background = '#5c2626';
-        status.style.borderColor = '#f87171';
-        status.style.color = '#f87171';
-        status.textContent = 'Error: ' + event.error;
-      };
-
-      currentRecognition.onend = () => {
-        isTranscribing = false;
-        document.getElementById('stopTranscribeBtn').style.display = 'none';
-        document.getElementById('transcribeBtn').style.display = 'block';
-
-        const finalText = document.getElementById('transcript').value;
-        if (finalText.trim()) {
-          status.style.background = '#1a3a1a';
-          status.style.borderColor = '#22c55e';
-          status.style.color = '#22c55e';
-          status.textContent = 'Transcription complete. Review and edit as needed.';
-        } else {
-          status.style.background = '#5c2626';
-          status.style.borderColor = '#f87171';
-          status.style.color = '#f87171';
-          status.textContent = 'No speech detected. Please try again or enter manually.';
-        }
-
-        // Cleanup
-        video.pause();
-        URL.revokeObjectURL(videoUrl);
-        document.body.removeChild(video);
-      };
-
-      // Start recognition and play video
-      try {
-        currentRecognition.start();
-        video.play().catch(e => {
-          status.textContent = 'Unable to play video audio: ' + e.message;
-          currentRecognition.stop();
-        });
-      } catch (e) {
-        showTranscriptionError('Error starting transcription: ' + e.message);
-      }
-    }
-
-    function stopBrowserTranscription() {
-      if (currentRecognition && isTranscribing) {
-        currentRecognition.stop();
-      }
-    }
-
-    function showTranscriptionError(msg) {
-      const status = document.getElementById('transcriptionStatus');
-      status.style.display = 'block';
-      status.style.background = '#5c2626';
-      status.style.borderColor = '#f87171';
-      status.style.color = '#f87171';
-      status.textContent = msg;
     }
   </script>
 
