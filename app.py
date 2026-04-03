@@ -25,10 +25,20 @@ load_dotenv()
 
 from video_processor import extract_audio, detect_scene_changes, extract_frames_at_timestamps, get_video_duration
 from frame_analyzer import process_all_frames, filter_duplicate_frames
-from transcriber import transcribe_audio, format_transcript_with_timestamps
 from guide_generator import GuideGenerator
 from doc_builder import generate_guide_document
-from slack_bot import create_slack_bot_scanner
+
+# Optional imports — gracefully handle missing dependencies
+try:
+    from transcriber import transcribe_audio, format_transcript_with_timestamps
+except ImportError:
+    transcribe_audio = None
+    format_transcript_with_timestamps = None
+
+try:
+    from slack_bot import create_slack_bot_scanner
+except ImportError:
+    create_slack_bot_scanner = None
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -244,6 +254,8 @@ def download(filename):
 def scan_channels():
     """Scan Slack channels for documentation-worthy conversations."""
     try:
+        if not create_slack_bot_scanner:
+            return jsonify({"error": "Slack bot module not available."}), 400
         bot = create_slack_bot_scanner()
         if not bot:
             return jsonify({
