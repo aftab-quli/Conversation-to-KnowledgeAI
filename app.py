@@ -522,6 +522,8 @@ HTML = """<!DOCTYPE html>
         clearInterval(iv);
         document.getElementById('zoom-text').value = DEMO_TRANSCRIPT;
         document.getElementById('file-size').textContent = sizeMB + ' MB — Transcript ready ✓';
+        // Auto-trigger analysis
+        setTimeout(() => handleAnalyze(), 600);
       }
     }, 900);
   }
