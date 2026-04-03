@@ -28,12 +28,7 @@ from frame_analyzer import process_all_frames, filter_duplicate_frames
 from guide_generator import GuideGenerator
 from doc_builder import generate_guide_document
 
-# Optional imports — gracefully handle missing dependencies
-try:
-    from transcriber import transcribe_audio, format_transcript_with_timestamps
-except ImportError:
-    transcribe_audio = None
-    format_transcript_with_timestamps = None
+from transcriber import transcribe_audio, format_transcript_with_timestamps
 
 try:
     from slack_bot import create_slack_bot_scanner
@@ -67,9 +62,8 @@ def allowed_file(filename: str) -> bool:
 def run_video_job(job_id: str, video_path: str, instructions: str, doc_type: str, transcript: str = None):
     """Full pipeline: video → audio → transcript → frames → guide → docx.
 
-    If transcript is provided, skip audio extraction and Whisper transcription.
-    If transcript is None and OPENAI_API_KEY exists, use Whisper.
-    If transcript is None and no OPENAI_API_KEY, raise error.
+    If transcript is provided, skip audio extraction and transcription.
+    If transcript is None, extract audio and transcribe locally using faster-whisper.
     """
     job = jobs[job_id]
     job_temp = TEMP_DIR / job_id
@@ -85,15 +79,7 @@ def run_video_job(job_id: str, video_path: str, instructions: str, doc_type: str
             transcript_text = transcript
             segments = []
         else:
-            # Fall back to Whisper if available
-            openai_key = os.getenv("OPENAI_API_KEY")
-            if not openai_key:
-                raise RuntimeError(
-                    "No transcript provided and OPENAI_API_KEY not set. "
-                    "Please provide a transcript via the browser transcription feature or set OPENAI_API_KEY."
-                )
-
-            # Extract audio
+            # Extract audio and transcribe locally
             job["step"] = "Extracting audio from video..."
             job["progress"] = 10
             logger.info(f"Job {job_id}: Extracting audio")
@@ -101,12 +87,12 @@ def run_video_job(job_id: str, video_path: str, instructions: str, doc_type: str
             audio_path = str(job_temp / "audio.wav")
             extract_audio(video_path, audio_path)
 
-            # Transcribe with Whisper
+            # Transcribe with local Whisper model
             job["step"] = "Transcribing audio with Whisper..."
             job["progress"] = 25
             logger.info(f"Job {job_id}: Transcribing")
 
-            transcript_result = transcribe_audio(audio_path, openai_key)
+            transcript_result = transcribe_audio(audio_path)
             transcript_text = transcript_result["text"]
             segments = transcript_result.get("segments", [])
 

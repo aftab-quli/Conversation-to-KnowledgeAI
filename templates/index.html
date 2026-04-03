@@ -159,8 +159,8 @@
 
       <!-- Transcript -->
       <div class="field">
-        <label>Transcript</label>
-        <div class="field-hint">Paste the conversation or meeting transcript here. VicSherlock will extract the key steps.</div>
+        <label>Transcript (optional)</label>
+        <div class="field-hint">Leave empty to auto-transcribe from video, or paste a transcript to skip transcription.</div>
         <textarea id="transcript" rows="5" placeholder="Paste your video transcript, Slack conversation, or Zoom meeting notes here..."></textarea>
       </div>
 
@@ -261,7 +261,6 @@
       if (!instructions) { alert('Please provide instructions for the guide.'); return; }
 
       const transcript = document.getElementById('transcript').value.trim();
-      if (!transcript) { alert('Please paste a transcript. VicSherlock needs the conversation text to generate a guide.'); return; }
 
       // Reset UI
       document.getElementById('errorBox').style.display = 'none';
