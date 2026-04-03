@@ -6,7 +6,6 @@ Vic.ai AI Hackathon 2025 · Built by Aftab Quli, Implementation Team
 import os
 import io
 import json
-import tempfile
 from flask import Flask, request, jsonify, send_file, render_template_string
 from anthropic import Anthropic
 
@@ -476,28 +475,54 @@ HTML = """<!DOCTYPE html>
   function onDrop(e)      { e.preventDefault(); onDragLeave(e); setFile(e.dataTransfer.files[0]); }
   function onFileSelect(e){ setFile(e.target.files[0]); }
 
-  async function setFile(file) {
+  function setFile(file) {
     if (!file) return;
     selectedFile = file;
     document.getElementById('upload-zone').classList.add('hidden');
     document.getElementById('file-selected').classList.remove('hidden');
     document.getElementById('file-name').textContent = file.name;
-    document.getElementById('file-size').textContent = (file.size/(1024*1024)).toFixed(1)+' MB — Transcribing audio...';
+    document.getElementById('file-size').textContent = (file.size/(1024*1024)).toFixed(1)+' MB — Transcribing with browser speech engine...';
 
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await fetch('/api/transcribe', { method: 'POST', body: fd });
-      const data = await res.json();
-      if (data.transcript) {
-        document.getElementById('zoom-text').value = data.transcript;
-        document.getElementById('file-size').textContent = (file.size/(1024*1024)).toFixed(1)+' MB — Transcript ready ✓';
-      } else {
-        document.getElementById('file-size').textContent = 'Transcription failed: ' + (data.error || 'unknown error');
-      }
-    } catch(err) {
-      document.getElementById('file-size').textContent = 'Transcription error: ' + err.message;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      document.getElementById('file-size').textContent = (file.size/(1024*1024)).toFixed(1)+' MB — Browser speech not supported. Paste transcript below instead.';
+      return;
     }
+
+    const videoEl = document.createElement('video');
+    videoEl.src = URL.createObjectURL(file);
+    videoEl.muted = false;
+    videoEl.style.display = 'none';
+    document.body.appendChild(videoEl);
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    let fullTranscript = '';
+
+    recognition.onresult = (e) => {
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) fullTranscript += e.results[i][0].transcript + ' ';
+      }
+      document.getElementById('zoom-text').value = fullTranscript;
+    };
+
+    recognition.onerror = () => {
+      document.getElementById('file-size').textContent = (file.size/(1024*1024)).toFixed(1)+' MB — Speech recognition error. Paste transcript below instead.';
+    };
+
+    videoEl.onended = () => {
+      recognition.stop();
+      document.body.removeChild(videoEl);
+      document.getElementById('file-size').textContent = (file.size/(1024*1024)).toFixed(1)+' MB — Transcript ready ✓';
+    };
+
+    videoEl.oncanplay = () => {
+      recognition.start();
+      videoEl.play();
+    };
   }
 
   function getInput() {
@@ -632,46 +657,6 @@ HTML = """<!DOCTYPE html>
 def index():
     return render_template_string(HTML)
 
-
-@app.route("/api/transcribe", methods=["POST"])
-def transcribe():
-    if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
-
-    f = request.files["file"]
-    suffix = os.path.splitext(f.filename)[1] or ".mp4"
-
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        f.save(tmp.name)
-        video_path = tmp.name
-
-    audio_path = video_path + ".wav"
-
-    try:
-        import subprocess
-        import imageio_ffmpeg
-        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-        subprocess.run(
-            [ffmpeg_exe, "-y", "-i", video_path, "-ac", "1", "-ar", "16000", "-acodec", "pcm_s16le", audio_path],
-            check=True, capture_output=True
-        )
-
-        from faster_whisper import WhisperModel
-        model = WhisperModel("tiny", device="cpu", compute_type="int8")
-        segments, _ = model.transcribe(audio_path, beam_size=1)
-        transcript = " ".join(seg.text.strip() for seg in segments)
-
-        return jsonify({"transcript": transcript})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-    finally:
-        for p in [video_path, audio_path]:
-            try:
-                os.unlink(p)
-            except Exception:
-                pass
 
 
 @app.route("/api/generate", methods=["POST"])
