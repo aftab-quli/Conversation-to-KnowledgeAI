@@ -435,6 +435,13 @@ def scan_status(job_id):
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
     """Handle Slack events (messages, app_home_opened, etc.)."""
+    # Handle Slack URL verification challenge directly (before Bolt signature check)
+    data = request.get_json(silent=True)
+    if data and data.get("type") == "url_verification":
+        logger.info("Received Slack URL verification challenge")
+        return jsonify({"challenge": data.get("challenge", "")})
+
+    # Pass all other events to Slack Bolt handler
     if slack_handler:
         return slack_handler.handle(request)
     return jsonify({"error": "Slack bot not configured"}), 400
