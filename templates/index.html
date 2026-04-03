@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>VicSherlock</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f1117;
+      color: #e8e8e8;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 40px 24px;
+    }
+
+    .logo {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #666;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      font-size: 38px;
+      font-weight: 700;
+      text-align: center;
+      background: linear-gradient(135deg, #fff 0%, #a78bfa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
+      line-height: 1.2;
+    }
+
+    .subtitle {
+      color: #888;
+      font-size: 15px;
+      text-align: center;
+      margin-bottom: 40px;
+      max-width: 500px;
+    }
+
+    .card {
+      background: #1a1d27;
+      border: 1px solid #2a2d3a;
+      border-radius: 16px;
+      padding: 32px;
+      width: 100%;
+      max-width: 600px;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.4);
+    }
+
+    /* Drop zone */
+    .drop-zone {
+      border: 2px dashed #3a3d4a;
+      border-radius: 12px;
+      padding: 40px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 24px;
+      position: relative;
+    }
+
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: #7c3aed;
+      background: rgba(124, 58, 237, 0.05);
+    }
+
+    .drop-zone.has-file {
+      border-color: #22c55e;
+      background: rgba(34, 197, 94, 0.05);
+    }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .drop-icon { font-size: 36px; margin-bottom: 12px; }
+
+    .drop-text {
+      font-size: 15px;
+      color: #888;
+      line-height: 1.6;
+    }
+
+    .drop-text strong { color: #a78bfa; }
+
+    .file-name {
+      font-size: 14px;
+      color: #22c55e;
+      font-weight: 600;
+      margin-top: 8px;
+    }
+
+    /* Fields */
+    .field { margin-bottom: 20px; }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #999;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    textarea, select {
+      width: 100%;
+      background: #0f1117;
+      border: 1px solid #2a2d3a;
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 15px;
+      color: #e8e8e8;
+      outline: none;
+      transition: border-color 0.2s;
+      font-family: inherit;
+      resize: vertical;
+    }
+
+    textarea:focus, select:focus { border-color: #7c3aed; }
+    textarea::placeholder { color: #444; }
+    select option { background: #1a1d27; }
+
+    /* Doc types */
+    .doc-types {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    .doc-type {
+      background: #0f1117;
+      border: 1px solid #2a2d3a;
+      border-radius: 10px;
+      padding: 14px 8px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      user-select: none;
+    }
+
+    .doc-type:hover { border-color: #7c3aed; }
+
+    .doc-type.selected {
+      border-color: #7c3aed;
+      background: #1e1333;
+    }
+
+    .doc-type .icon { font-size: 22px; margin-bottom: 6px; }
+    .doc-type .name { font-size: 12px; font-weight: 600; color: #ccc; }
+    .doc-type.selected .name { color: #a78bfa; }
+
+    /* Button */
+    button#generateBtn {
+      width: 100%;
+      background: linear-gradient(135deg, #7c3aed, #5b21b6);
+      border: none;
+      border-radius: 10px;
+      padding: 16px;
+      font-size: 16px;
+      font-weight: 600;
+      color: white;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+      margin-top: 8px;
+    }
+
+    button#generateBtn:hover { opacity: 0.9; }
+    button#generateBtn:active { transform: scale(0.98); }
+    button#generateBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Progress */
+    #progressSection { margin-top: 24px; display: none; }
+
+    .progress-bar-track {
+      background: #0f1117;
+      border-radius: 99px;
+      height: 6px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #7c3aed, #a78bfa);
+      border-radius: 99px;
+      width: 0%;
+      transition: width 0.6s ease;
+    }
+
+    .step-text {
+      font-size: 14px;
+      color: #888;
+      text-align: center;
+    }
+
+    /* Results */
+    #resultsSection { margin-top: 24px; display: none; }
+
+    .result-header {
+      font-size: 13px;
+      font-weight: 600;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+    }
+
+    .result-stats {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .stat-badge {
+      display: inline-block;
+      background: #1e1333;
+      border: 1px solid #4c1d95;
+      border-radius: 99px;
+      padding: 4px 14px;
+      font-size: 12px;
+      color: #a78bfa;
+    }
+
+    .file-card {
+      background: #0f1117;
+      border: 1px solid #2a2d3a;
+      border-radius: 10px;
+      padding: 16px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .file-info { display: flex; align-items: center; gap: 12px; }
+    .file-icon { font-size: 24px; }
+    .file-name-result { font-size: 14px; font-weight: 600; color: #e8e8e8; }
+    .file-meta { font-size: 12px; color: #666; margin-top: 2px; }
+
+    .download-btn {
+      background: #1e1333;
+      border: 1px solid #7c3aed;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #a78bfa;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+
+    .download-btn:hover { background: #2d1f4e; }
+
+    /* Error */
+    .error-box {
+      background: #1f0f0f;
+      border: 1px solid #5c2626;
+      border-radius: 10px;
+      padding: 16px;
+      color: #f87171;
+      font-size: 14px;
+      margin-top: 20px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="logo">vic.ai · vicsherlock</div>
+
+  <h1>VicSherlock</h1>
+  <p class="subtitle">Drop a video recording. Get a complete step-by-step guide with screenshots — in minutes.</p>
+
+  <div class="card">
+
+    <!-- Video Upload -->
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="videoInput" accept="video/*" />
+      <div class="drop-icon">🎬</div>
+      <div class="drop-text">
+        <strong>Drop your video here</strong> or click to browse<br>
+        MP4, MOV, AVI, MKV, WebM — up to 500MB
+      </div>
+      <div class="file-name" id="fileName"></div>
+    </div>
+
+    <!-- Instructions -->
+    <div class="field">
+      <label>Instructions</label>
+      <textarea id="instructions" rows="3" placeholder="e.g. Create a step-by-step guide for implementing VicPay payments..."></textarea>
+    </div>
+
+    <!-- Doc Type -->
+    <div class="field">
+      <label>Document Type</label>
+      <div class="doc-types">
+        <div class="doc-type selected" data-value="step-by-step" onclick="selectType(this)">
+          <div class="icon">📋</div>
+          <div class="name">Step-by-Step</div>
+        </div>
+        <div class="doc-type" data-value="faq" onclick="selectType(this)">
+          <div class="icon">❓</div>
+          <div class="name">FAQ</div>
+        </div>
+        <div class="doc-type" data-value="troubleshooting" onclick="selectType(this)">
+          <div class="icon">🔧</div>
+          <div class="name">Troubleshoot</div>
+        </div>
+      </div>
+    </div>
+
+    <button id="generateBtn" onclick="generate()">🔍 Generate Guide</button>
+
+    <div id="progressSection">
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="progressBar"></div>
+      </div>
+      <div class="step-text" id="stepText">Starting...</div>
+    </div>
+
+    <div class="error-box" id="errorBox"></div>
+
+    <div id="resultsSection">
+      <div class="result-stats" id="resultStats"></div>
+      <div class="result-header">Generated Document</div>
+      <div id="fileCard"></div>
+    </div>
+
+  </div>
+
+  <script>
+    let selectedFile = null;
+    let currentJobId = null;
+    let pollInterval = null;
+
+    // Drag and drop
+    const dropZone = document.getElementById('dropZone');
+    const videoInput = document.getElementById('videoInput');
+
+    dropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+    videoInput.addEventListener('change', e => {
+      if (e.target.files.length) handleFile(e.target.files[0]);
+    });
+
+    function handleFile(file) {
+      selectedFile = file;
+      dropZone.classList.add('has-file');
+      document.getElementById('fileName').textContent = file.name + ' (' + formatSize(file.size) + ')';
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function selectType(el) {
+      document.querySelectorAll('.doc-type').forEach(d => d.classList.remove('selected'));
+      el.classList.add('selected');
+    }
+
+    function getSelectedType() {
+      const sel = document.querySelector('.doc-type.selected');
+      return sel ? sel.dataset.value : 'step-by-step';
+    }
+
+    function showError(msg) {
+      const box = document.getElementById('errorBox');
+      box.textContent = msg;
+      box.style.display = 'block';
+      document.getElementById('progressSection').style.display = 'none';
+      document.getElementById('generateBtn').disabled = false;
+    }
+
+    async function generate() {
+      if (!selectedFile) { alert('Please select a video file.'); return; }
+
+      const instructions = document.getElementById('instructions').value.trim();
+      if (!instructions) { alert('Please provide instructions for the guide.'); return; }
+
+      // Reset UI
+      document.getElementById('errorBox').style.display = 'none';
+      document.getElementById('resultsSection').style.display = 'none';
+      document.getElementById('progressSection').style.display = 'block';
+      document.getElementById('generateBtn').disabled = true;
+      document.getElementById('progressBar').style.width = '5%';
+      document.getElementById('stepText').textContent = 'Uploading video...';
+
+      const formData = new FormData();
+      formData.append('video', selectedFile);
+      formData.append('instructions', instructions);
+      formData.append('doc_type', getSelectedType());
+
+      try {
+        const res = await fetch('/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (data.error) { showError(data.error); return; }
+
+        currentJobId = data.job_id;
+        pollInterval = setInterval(pollStatus, 2000);
+      } catch (e) {
+        showError('Could not connect to server.');
+      }
+    }
+
+    async function pollStatus() {
+      if (!currentJobId) return;
+      try {
+        const res = await fetch('/status/' + currentJobId);
+        const job = await res.json();
+
+        const progress = job.progress || 0;
+        document.getElementById('progressBar').style.width = progress + '%';
+        document.getElementById('stepText').textContent = job.step || 'Working...';
+
+        if (job.status === 'done') {
+          clearInterval(pollInterval);
+          document.getElementById('progressBar').style.width = '100%';
+          showResults(job);
+          document.getElementById('generateBtn').disabled = false;
+        } else if (job.status === 'error') {
+          clearInterval(pollInterval);
+          showError(job.error || 'Something went wrong.');
+        }
+      } catch (e) {
+        clearInterval(pollInterval);
+        showError('Lost connection to server.');
+      }
+    }
+
+    function showResults(job) {
+      document.getElementById('progressSection').style.display = 'none';
+      document.getElementById('resultsSection').style.display = 'block';
+
+      // Stats
+      const stats = document.getElementById('resultStats');
+      stats.innerHTML = '';
+      if (job.step_count) stats.innerHTML += `<span class="stat-badge">${job.step_count} steps</span>`;
+      if (job.screenshot_count) stats.innerHTML += `<span class="stat-badge">${job.screenshot_count} screenshots</span>`;
+      stats.innerHTML += `<span class="stat-badge">Ready to download</span>`;
+
+      // File card
+      const card = document.getElementById('fileCard');
+      const file = job.file;
+      card.innerHTML = `
+        <div class="file-card">
+          <div class="file-info">
+            <div class="file-icon">📄</div>
+            <div>
+              <div class="file-name-result">${file.name}</div>
+              <div class="file-meta">${file.filename}</div>
+            </div>
+          </div>
+          <a class="download-btn" href="/download/${file.filename}" download>⬇ Download</a>
+        </div>
+      `;
+    }
+  </script>
+
+</body>
+</html>

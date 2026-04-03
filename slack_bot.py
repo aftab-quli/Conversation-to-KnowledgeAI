@@ -1,486 +1,409 @@
 """
-VicSherlock — Slack Bot
-Vic.ai AI Hackathon 2025 · Built by Aftab Quli
+slack_bot.py
+----------
+VicSherlock Slack Bot — Scans Slack channels for documentation-worthy conversations.
+Uses Claude to identify tutorials, troubleshooting guides, and process explanations.
+Sends DMs to users when it finds something worth documenting.
 
-This bot:
-  - Monitors every Slack channel and DMs the author when it finds something doc-worthy
-  - Accepts on-demand DMs: "Create a FAQ from this transcript" / "Update [Guru link] based on this"
-  - Handles Zoom recording.completed webhooks — auto-analyzes every cloud-recorded call
-  - Generates Vic-branded .docx files and sends them back in the DM thread for review
+Features:
+- Scans public and private channels
+- Analyzes conversations with Claude AI
+- Identifies documentation-worthy threads
+- Sends intelligent DM notifications with thread links
 """
 
-import os, io, json, re, requests
-from flask import Flask, request, jsonify
-from slack_bolt import App
-from slack_bolt.adapter.flask import SlackRequestHandler
+import os
+import logging
+from typing import Optional
+from datetime import datetime
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 from anthropic import Anthropic
 
-# ── App setup ─────────────────────────────────────────────────────────────────
-
-flask_app = Flask(__name__)
-
-slack_app = App(
-    token=os.environ.get("SLACK_BOT_TOKEN"),
-    signing_secret=os.environ.get("SLACK_SIGNING_SECRET"),
-)
-handler = SlackRequestHandler(slack_app)
-_anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
-claude = Anthropic(api_key=_anthropic_key) if _anthropic_key else None
-
-# ── In-memory conversation state (per user DM thread) ────────────────────────
-# state[user_id] = {
-#   "step":      "awaiting_action" | "awaiting_doc_type" | "awaiting_approval",
-#   "content":   <source text>,
-#   "source":    "slack" | "zoom" | "gong",
-#   "action":    "new" | "update",
-#   "doc_type":  "FAQ" | "step-by-step guide" | ...,
-#   "update_url": <existing article URL if updating>,
-#   "doc_data":  <generated doc JSON>,
-# }
-state = {}
-
-DOC_TYPES = ["step-by-step guide", "faq", "release notes",
-             "troubleshooting guide", "process doc", "training doc", "customer-facing guide"]
-
-# ── Prompts ───────────────────────────────────────────────────────────────────
-
-ANALYZE_PROMPT = """You are VicSherlock, Vic.ai's documentation agent.
-Analyze this Slack message and determine if it describes something worth documenting:
-a process change, product update, feature flag change, workflow update, or important announcement.
-
-Respond ONLY with a valid JSON object — no markdown, no explanation:
-{
-  "worthy": true or false,
-  "reason": "one sentence explanation",
-  "suggested_type": "step-by-step guide | FAQ | release notes | troubleshooting guide | process doc",
-  "summary": "one sentence summary of what this is about"
-}"""
-
-DOC_PROMPT = """You are VicSherlock, Vic.ai's documentation agent.
-Generate a {doc_type} based on the content provided.
-
-Output ONLY a valid JSON object — no markdown, no explanation:
-{{
-  "title": "Clear, descriptive document title",
-  "summary": "1-2 sentence summary",
-  "sections": [
-    {{
-      "heading": "Section heading",
-      "content": "Optional intro sentence",
-      "steps": ["Clear step or point", "Another step"]
-    }}
-  ],
-  "notes": ["Important caveat or note"]
-}}"""
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
-def call_claude(system, user_msg, max_tokens=4096):
-    resp = claude.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=max_tokens,
-        system=system,
-        messages=[{"role": "user", "content": user_msg}],
-    )
-    return resp.content[0].text
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
-def is_doc_worthy(message_text):
-    """Ask Claude if a Slack message is worth documenting. Returns dict."""
-    try:
-        raw  = call_claude(ANALYZE_PROMPT, message_text, max_tokens=512)
-        s, e = raw.find("{"), raw.rfind("}") + 1
-        return json.loads(raw[s:e])
-    except Exception:
-        return {"worthy": False}
+class SlackBotScanner:
+    """Scans Slack channels for documentation-worthy conversations."""
 
+    def __init__(self, slack_bot_token: str, anthropic_api_key: str):
+        """
+        Initialize the Slack bot scanner.
 
-def generate_doc_json(content, doc_type, source="slack"):
-    """Ask Claude to generate a structured doc. Returns dict."""
-    system = DOC_PROMPT.format(doc_type=doc_type)
-    user   = f"Source: {source}\n\nContent:\n{content}"
-    raw    = call_claude(system, user)
-    s, e   = raw.find("{"), raw.rfind("}") + 1
-    return json.loads(raw[s:e])
+        Args:
+            slack_bot_token: Slack bot token (xoxb-...)
+            anthropic_api_key: Anthropic API key for Claude
+        """
+        self.slack_client = WebClient(token=slack_bot_token)
+        self.anthropic_client = Anthropic(api_key=anthropic_api_key)
+        self.bot_user_id = self._get_bot_user_id()
 
-
-def build_docx_bytes(doc_data):
-    """Build a Vic-branded .docx from doc_data dict. Returns bytes."""
-    from docx import Document
-    from docx.shared import Pt, RGBColor, Inches
-
-    NAVY   = (28, 32, 67)
-    ACCENT = (91, 95, 207)
-
-    doc = Document()
-    for sec in doc.sections:
-        sec.top_margin = sec.bottom_margin = Inches(1)
-        sec.left_margin = sec.right_margin = Inches(1.2)
-
-    def run(para, text, bold=False, italic=False, size=11, color=None):
-        r = para.add_run(text)
-        r.bold, r.italic = bold, italic
-        r.font.size = Pt(size)
-        r.font.name = "Calibri"
-        if color:
-            r.font.color.rgb = RGBColor(*color)
-        return r
-
-    run(doc.add_paragraph(), doc_data.get("title", "VicSherlock Guide"),
-        bold=True, size=22, color=NAVY)
-
-    if doc_data.get("summary"):
-        run(doc.add_paragraph(), doc_data["summary"], italic=True, size=11, color=(100,110,145))
-
-    doc.add_paragraph()
-
-    for section in doc_data.get("sections", []):
-        run(doc.add_paragraph(), section.get("heading",""), bold=True, size=14, color=ACCENT)
-        if section.get("content"):
-            run(doc.add_paragraph(), section["content"], size=11)
-        for step in section.get("steps", []):
-            run(doc.add_paragraph(style="List Number"), step, size=11)
-        doc.add_paragraph()
-
-    if doc_data.get("notes"):
-        run(doc.add_paragraph(), "Notes", bold=True, size=13, color=NAVY)
-        for note in doc_data["notes"]:
-            run(doc.add_paragraph(style="List Bullet"), note, size=10)
-
-    doc.add_paragraph()
-    run(doc.add_paragraph(),
-        "Generated by VicSherlock · Vic.ai · Conversation-to-Knowledge AI",
-        italic=True, size=9, color=(150,155,185))
-
-    buf = io.BytesIO()
-    doc.save(buf)
-    return buf.getvalue()
-
-
-def send_doc_to_user(user_id, doc_data, say_fn, thread_ts=None):
-    """Generate .docx and upload it to the user's DM."""
-    doc_bytes = build_docx_bytes(doc_data)
-    title     = doc_data.get("title", "VicSherlock_Output")
-    filename  = title.replace(" ", "_")[:60] + ".docx"
-
-    slack_app.client.files_upload_v2(
-        channels=user_id,
-        filename=filename,
-        content=doc_bytes,
-        title=title,
-        initial_comment=(
-            f"Here's your doc: *{title}*\n\n"
-            "Review it and let me know:\n"
-            "• Reply *approved* and I'll publish it\n"
-            "• Reply *update: [your feedback]* and I'll revise it\n"
-            "• Or paste the link to the Guru/Intercom article and I'll update it directly"
-        ),
-    )
-
-
-def parse_doc_type(text):
-    """Extract doc type from free-text user message."""
-    text_lower = text.lower()
-    for dt in DOC_TYPES:
-        if dt in text_lower:
-            return dt
-    if "faq"            in text_lower: return "FAQ"
-    if "step"           in text_lower: return "step-by-step guide"
-    if "release"        in text_lower: return "release notes"
-    if "troubleshoot"   in text_lower: return "troubleshooting guide"
-    if "training"       in text_lower: return "training doc"
-    if "customer"       in text_lower: return "customer-facing guide"
-    return None
-
-
-def extract_url(text):
-    """Pull the first URL out of a message."""
-    match = re.search(r'https?://\S+', text)
-    return match.group(0) if match else None
-
-
-# ── Channel monitoring ────────────────────────────────────────────────────────
-
-@slack_app.event("message")
-def handle_channel_message(event, say, client):
-    """Listen to every channel message. If doc-worthy, DM the author."""
-
-    # Ignore bot messages, DMs, and edited messages
-    if event.get("bot_id"):                    return
-    if event.get("channel_type") == "im":      return
-    if event.get("subtype") == "message_changed": return
-
-    text    = event.get("text", "").strip()
-    user_id = event.get("user")
-
-    if not text or not user_id or len(text) < 40:
-        return
-
-    # Check if doc-worthy
-    result = is_doc_worthy(text)
-    if not result.get("worthy"):
-        return
-
-    # Get channel name for context
-    try:
-        ch_info  = client.conversations_info(channel=event["channel"])
-        ch_name  = ch_info["channel"]["name"]
-    except Exception:
-        ch_name = "a Slack channel"
-
-    # Initialise state for this user
-    state[user_id] = {
-        "step":    "awaiting_action",
-        "content": text,
-        "source":  "slack",
-        "channel": ch_name,
-        "suggested_type": result.get("suggested_type", "step-by-step guide"),
-    }
-
-    # DM the author
-    client.chat_postMessage(
-        channel=user_id,
-        text=(
-            f"Hey — VicSherlock here. I was scanning #{ch_name} and spotted something "
-            f"that looks worth documenting.\n\n"
-            f"*What I found:* {result.get('summary', text[:200])}\n\n"
-            f"What would you like to do?\n"
-            f"• Reply *new* to create a new guide\n"
-            f"• Reply *update* + paste the existing article link to update it\n"
-            f"• Reply *skip* to ignore this one\n\n"
-            f"I'd suggest a *{result.get('suggested_type', 'guide')}* — "
-            f"but you can ask for any type: FAQ, release notes, troubleshooting guide, etc."
-        ),
-    )
-
-
-# ── DM handling ───────────────────────────────────────────────────────────────
-
-@slack_app.event("app_mention")
-def handle_mention(event, say):
-    say("Hey! DM me directly to get started. You can say things like:\n"
-        "• *Create a FAQ from this transcript* (then paste it)\n"
-        "• *Update [Guru link] based on today's call*\n"
-        "• *Write a step-by-step guide from the Zoom call on April 2*")
-
-
-@slack_app.message("")
-def handle_dm(message, say, client):
-    """Handle all DMs to the bot."""
-
-    if message.get("channel_type") != "im": return
-    if message.get("bot_id"):               return
-
-    user_id = message["user"]
-    text    = message.get("text", "").strip()
-    text_lo = text.lower()
-    s       = state.get(user_id, {})
-
-    # ── SKIP ──
-    if text_lo in ("skip", "no", "ignore", "not now"):
-        state.pop(user_id, None)
-        say("Got it — skipping this one. I'll keep watching.")
-        return
-
-    # ── APPROVAL ──
-    if s.get("step") == "awaiting_approval" and text_lo.startswith("approved"):
-        url = extract_url(text) or s.get("update_url")
-        if url:
-            say(f"Publishing to {url}... *(auto-publish via API coming soon — "
-                f"for now, use the downloaded doc to update the article manually)*")
-        else:
-            say("Approved! The doc is ready to publish. "
-                "Paste the Guru or Intercom article link and I'll push it directly *(coming soon)*.")
-        state.pop(user_id, None)
-        return
-
-    # ── REVISION REQUEST ──
-    if s.get("step") == "awaiting_approval" and text_lo.startswith("update:"):
-        feedback    = text[7:].strip()
-        revised_doc = generate_doc_json(
-            s["content"] + f"\n\nRevision requested: {feedback}",
-            s.get("doc_type", "guide"), s.get("source", "slack")
-        )
-        state[user_id]["doc_data"] = revised_doc
-        say("Revised — here's the updated version:")
-        send_doc_to_user(user_id, revised_doc, say)
-        return
-
-    # ── AWAITING ACTION (bot asked new/update/skip) ──
-    if s.get("step") == "awaiting_action":
-        if "update" in text_lo:
-            url = extract_url(text)
-            state[user_id].update({"step": "awaiting_doc_type", "action": "update", "update_url": url})
-            say(f"Got it — I'll update the existing article{' at ' + url if url else ''}.\n"
-                f"What type of doc is it? (step-by-step guide, FAQ, release notes, troubleshooting guide, etc.) "
-                f"Or just say *go* and I'll use my suggestion: *{s.get('suggested_type', 'guide')}*")
-        elif "new" in text_lo:
-            state[user_id].update({"step": "awaiting_doc_type", "action": "new"})
-            say(f"Creating a new guide. What type? (step-by-step guide, FAQ, release notes, troubleshooting guide, etc.) "
-                f"Or just say *go* to use my suggestion: *{s.get('suggested_type', 'guide')}*")
-        return
-
-    # ── AWAITING DOC TYPE ──
-    if s.get("step") == "awaiting_doc_type":
-        doc_type = parse_doc_type(text) or s.get("suggested_type", "step-by-step guide")
-        if text_lo == "go":
-            doc_type = s.get("suggested_type", "step-by-step guide")
-
-        state[user_id].update({"step": "awaiting_approval", "doc_type": doc_type})
-        say(f"On it — generating a *{doc_type}* now...")
-
+    def _get_bot_user_id(self) -> str:
+        """Get the bot's user ID from Slack."""
         try:
-            doc_data = generate_doc_json(s["content"], doc_type, s.get("source","slack"))
-            state[user_id]["doc_data"] = doc_data
-            send_doc_to_user(user_id, doc_data, say)
-        except Exception as e:
-            say(f"Something went wrong generating the doc: {str(e)}")
-            state.pop(user_id, None)
-        return
+            response = self.slack_client.auth_test()
+            return response["user_id"]
+        except SlackApiError as e:
+            logger.error(f"Error getting bot user ID: {e}")
+            raise
 
-    # ── ON-DEMAND REQUEST (no existing state) ──
-    # Detect if user is making a fresh request
-    has_attachment  = bool(message.get("files"))
-    mentions_create = any(w in text_lo for w in ["create", "write", "make", "generate", "build"])
-    mentions_update = "update" in text_lo
-    has_url         = bool(extract_url(text))
+    def scan_channels(self, limit_channels: Optional[int] = None) -> dict:
+        """
+        Scan public and private channels for documentation-worthy conversations.
 
-    if has_attachment or mentions_create or mentions_update or has_url or len(text) > 200:
-        # Extract content
-        content = text
-        if has_attachment:
-            # Try to get file content from attachment
-            for f in message.get("files", []):
-                if f.get("mimetype", "").startswith("text") or f.get("filetype") in ("txt","vtt","srt"):
-                    try:
-                        r = requests.get(f["url_private"], headers={"Authorization": f"Bearer {os.environ.get('SLACK_BOT_TOKEN')}"})
-                        content += "\n\n" + r.text
-                    except Exception:
-                        pass
+        Args:
+            limit_channels: Limit number of channels to scan (for testing)
 
-        # Detect doc type and action from message
-        doc_type   = parse_doc_type(text) or "step-by-step guide"
-        action     = "update" if mentions_update else "new"
-        update_url = extract_url(text) if mentions_update else None
-        source     = "zoom" if "zoom" in text_lo else "gong" if "gong" in text_lo else "slack"
-
-        state[user_id] = {
-            "step": "awaiting_approval",
-            "content": content,
-            "source": source,
-            "action": action,
-            "doc_type": doc_type,
-            "update_url": update_url,
+        Returns:
+            Dictionary with scan results and documentation-worthy threads
+        """
+        logger.info("Starting channel scan...")
+        scan_results = {
+            "timestamp": datetime.now().isoformat(),
+            "channels_scanned": 0,
+            "threads_analyzed": 0,
+            "documentation_worthy": [],
+            "errors": [],
         }
 
-        say(f"On it — generating a *{doc_type}* now...")
         try:
-            doc_data = generate_doc_json(content, doc_type, source)
-            state[user_id]["doc_data"] = doc_data
-            send_doc_to_user(user_id, doc_data, say)
+            channels = self._get_all_channels(limit_channels)
+            scan_results["channels_found"] = len(channels)
+            logger.info(f"Found {len(channels)} channels to scan")
+
+            for channel in channels:
+                try:
+                    channel_id = channel["id"]
+                    channel_name = channel["name"]
+                    logger.info(f"Scanning channel: #{channel_name}")
+
+                    threads = self._get_recent_threads(channel_id)
+                    scan_results["threads_analyzed"] += len(threads)
+
+                    for thread in threads:
+                        if self._is_documentation_worthy(thread, channel_name):
+                            doc_entry = {
+                                "channel_id": channel_id,
+                                "channel_name": channel_name,
+                                "thread_ts": thread["ts"],
+                                "user_id": thread["user"],
+                                "user_name": thread.get("username", "Unknown"),
+                                "topic": thread.get("topic", ""),
+                                "message_count": thread.get("message_count", 0),
+                                "preview": thread.get("text", "")[:200],
+                                "confidence": thread.get("confidence", 0),
+                            }
+                            scan_results["documentation_worthy"].append(doc_entry)
+                            logger.info(f"Found documentation-worthy thread in #{channel_name}")
+
+                    scan_results["channels_scanned"] += 1
+
+                except SlackApiError as e:
+                    error_msg = f"Error scanning channel {channel.get('name', 'unknown')}: {e}"
+                    logger.error(error_msg)
+                    scan_results["errors"].append(error_msg)
+                except Exception as e:
+                    error_msg = f"Unexpected error scanning channel: {e}"
+                    logger.error(error_msg)
+                    scan_results["errors"].append(error_msg)
+
+            logger.info(
+                f"Scan complete: {scan_results['channels_scanned']} channels, "
+                f"{len(scan_results['documentation_worthy'])} documentation-worthy threads found"
+            )
+            return scan_results
+
         except Exception as e:
-            say(f"Something went wrong: {str(e)}")
-            state.pop(user_id, None)
-    else:
-        say(
-            "Hey! Here's what I can do:\n\n"
-            "• *Paste any transcript or thread* and I'll turn it into a doc\n"
-            "• *Create a [FAQ / step-by-step guide / release notes] from this* + paste content\n"
-            "• *Update [article link] based on this* + paste content\n\n"
-            "I'm also watching all your Slack channels and will ping you if I spot something worth documenting."
+            logger.error(f"Fatal error during channel scan: {e}")
+            scan_results["errors"].append(f"Fatal error: {str(e)}")
+            return scan_results
+
+    def _get_all_channels(self, limit: Optional[int] = None) -> list:
+        """Get all public and private channels the bot has access to."""
+        channels = []
+        cursor = None
+
+        try:
+            # Get public channels
+            while True:
+                response = self.slack_client.conversations_list(
+                    cursor=cursor,
+                    limit=100,
+                    exclude_archived=True,
+                    types="public_channel,private_channel",
+                )
+
+                channels.extend(response["channels"])
+                cursor = response.get("response_metadata", {}).get("next_cursor")
+
+                if limit and len(channels) >= limit:
+                    channels = channels[:limit]
+                    break
+
+                if not cursor:
+                    break
+
+            return channels
+
+        except SlackApiError as e:
+            logger.error(f"Error fetching channels: {e}")
+            return []
+
+    def _get_recent_threads(self, channel_id: str, days_back: int = 7) -> list:
+        """
+        Get recent messages and threads from a channel.
+
+        Args:
+            channel_id: Channel ID to scan
+            days_back: How many days back to look
+
+        Returns:
+            List of message/thread data
+        """
+        threads = []
+        cursor = None
+
+        try:
+            while True:
+                response = self.slack_client.conversations_history(
+                    channel=channel_id,
+                    cursor=cursor,
+                    limit=50,
+                )
+
+                messages = response.get("messages", [])
+
+                for msg in messages:
+                    # Get message metadata
+                    msg_data = {
+                        "ts": msg["ts"],
+                        "text": msg.get("text", ""),
+                        "user": msg.get("user", ""),
+                        "username": msg.get("username", ""),
+                        "reply_count": msg.get("reply_count", 0),
+                        "message_count": msg.get("reply_count", 0) + 1,
+                    }
+
+                    # Get thread replies if this is a threaded message
+                    if msg.get("thread_ts"):
+                        try:
+                            thread_replies = self.slack_client.conversations_replies(
+                                channel=channel_id,
+                                ts=msg["thread_ts"],
+                                limit=100,
+                            )
+                            replies = thread_replies.get("messages", [])
+                            msg_data["thread_messages"] = replies
+                            msg_data["full_thread_text"] = " ".join(
+                                [m.get("text", "") for m in replies]
+                            )
+                        except SlackApiError:
+                            msg_data["thread_messages"] = []
+                            msg_data["full_thread_text"] = msg.get("text", "")
+
+                    threads.append(msg_data)
+
+                cursor = response.get("response_metadata", {}).get("next_cursor")
+                if not cursor:
+                    break
+
+            return threads
+
+        except SlackApiError as e:
+            logger.error(f"Error fetching threads from {channel_id}: {e}")
+            return []
+
+    def _is_documentation_worthy(self, thread: dict, channel_name: str) -> bool:
+        """
+        Use Claude to determine if a thread is documentation-worthy.
+
+        Args:
+            thread: Thread data
+            channel_name: Name of the channel
+
+        Returns:
+            True if documentation-worthy, False otherwise
+        """
+        # Skip very short messages
+        text = thread.get("full_thread_text", thread.get("text", ""))
+        if len(text) < 100:
+            return False
+
+        # Skip if no replies
+        if thread.get("message_count", 0) < 2:
+            return False
+
+        try:
+            prompt = f"""Analyze this Slack conversation and determine if it's worth documenting as a guide, tutorial, or process documentation.
+
+Channel: #{channel_name}
+Conversation:
+{text[:2000]}
+
+Consider:
+1. Is someone explaining a process or how-to?
+2. Are there troubleshooting steps that could help others?
+3. Is it an implementation guide or technical explanation?
+4. Does it contain valuable knowledge that should be preserved?
+
+Respond with:
+- A single line: YES or NO
+- One line explanation (max 50 words)
+- A suggested title for the documentation (max 60 chars)
+
+Format: YES/NO | Explanation | Title"""
+
+            response = self.anthropic_client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=300,
+                messages=[{"role": "user", "content": prompt}],
+            )
+
+            result = response.content[0].text.strip()
+            is_worthy = result.upper().startswith("YES")
+
+            if is_worthy:
+                # Parse the response to extract topic
+                lines = result.split("|")
+                if len(lines) >= 3:
+                    thread["topic"] = lines[2].strip()
+                    thread["confidence"] = 0.95 if "YES" in result[:5] else 0.75
+                else:
+                    thread["topic"] = "Documentation"
+                    thread["confidence"] = 0.75
+
+            return is_worthy
+
+        except Exception as e:
+            logger.error(f"Error analyzing thread with Claude: {e}")
+            return False
+
+    def send_dm_notification(
+        self, user_id: str, channel_name: str, thread_ts: str, topic: str
+    ) -> bool:
+        """
+        Send a DM to a user about a documentation-worthy thread.
+
+        Args:
+            user_id: Slack user ID to DM
+            channel_name: Name of channel where thread was found
+            thread_ts: Thread timestamp for creating thread link
+            topic: Topic/title of the documentation
+
+        Returns:
+            True if DM sent successfully
+        """
+        try:
+            # Format thread link
+            thread_link = f"slack://channel?team=*&id={channel_name}&message_ts={thread_ts}"
+            thread_text = f"View conversation in #{channel_name}"
+
+            message = f"""Hey there! I found a conversation in #{channel_name} that looks worth documenting:
+
+*{topic}*
+
+This could make a great step-by-step guide, troubleshooting doc, or process guide that could help your team.
+
+Would you like me to create a formatted guide from this conversation? Just reply or react if you're interested!
+
+{thread_text}"""
+
+            response = self.slack_client.chat_postMessage(
+                channel=user_id, text=message, mrkdwn=True
+            )
+
+            logger.info(f"DM sent to {user_id} about thread {thread_ts}")
+            return True
+
+        except SlackApiError as e:
+            logger.error(f"Error sending DM to {user_id}: {e}")
+            return False
+
+    def notify_documentation_worthy_threads(
+        self, documentation_worthy: list
+    ) -> dict:
+        """
+        Send DM notifications for all documentation-worthy threads found.
+
+        Args:
+            documentation_worthy: List of documentation-worthy thread entries
+
+        Returns:
+            Dictionary with notification results
+        """
+        results = {
+            "total": len(documentation_worthy),
+            "sent": 0,
+            "failed": 0,
+            "skipped": 0,
+        }
+
+        for entry in documentation_worthy:
+            try:
+                # Don't spam the same user multiple times - limit to 3 per scan
+                user_id = entry["user_id"]
+                if results["sent"] > 10:  # Safety limit
+                    results["skipped"] += 1
+                    continue
+
+                success = self.send_dm_notification(
+                    user_id=user_id,
+                    channel_name=entry["channel_name"],
+                    thread_ts=entry["thread_ts"],
+                    topic=entry["topic"],
+                )
+
+                if success:
+                    results["sent"] += 1
+                else:
+                    results["failed"] += 1
+
+            except Exception as e:
+                logger.error(f"Error notifying user {entry.get('user_id')}: {e}")
+                results["failed"] += 1
+
+        return results
+
+    def perform_full_scan_and_notify(
+        self, limit_channels: Optional[int] = None
+    ) -> dict:
+        """
+        Perform a complete scan and send notifications.
+
+        Args:
+            limit_channels: Limit number of channels to scan
+
+        Returns:
+            Combined results from scan and notifications
+        """
+        logger.info("Starting full scan and notification process...")
+
+        # Scan channels
+        scan_results = self.scan_channels(limit_channels)
+
+        # Send notifications
+        notification_results = self.notify_documentation_worthy_threads(
+            scan_results.get("documentation_worthy", [])
         )
 
+        # Combine results
+        scan_results["notifications"] = notification_results
 
-# ── Zoom webhook ──────────────────────────────────────────────────────────────
-
-@flask_app.route("/zoom/webhook", methods=["POST"])
-def zoom_webhook():
-    """
-    Receives Zoom recording.completed events.
-    Finds the host's Slack account by email and DMs them.
-    """
-    data = request.get_json(force=True)
-
-    # Zoom sends a validation challenge on first setup
-    if data.get("event") == "endpoint.url_validation":
-        return jsonify({"plainToken": data["payload"]["plainToken"],
-                        "encryptedToken": data["payload"]["plainToken"]})
-
-    if data.get("event") != "recording.completed":
-        return jsonify({"status": "ignored"}), 200
-
-    obj         = data["payload"]["object"]
-    topic       = obj.get("topic", "Untitled Meeting")
-    host_email  = obj.get("host_email", "")
-    files       = obj.get("recording_files", [])
-
-    # Find transcript file
-    transcript_text = ""
-    for f in files:
-        if f.get("file_type") == "TRANSCRIPT":
-            try:
-                r = requests.get(
-                    f["download_url"],
-                    headers={"Authorization": f"Bearer {os.environ.get('ZOOM_API_TOKEN','')}"},
-                    timeout=30,
-                )
-                transcript_text = r.text
-            except Exception:
-                pass
-            break
-
-    if not transcript_text:
-        return jsonify({"status": "no transcript"}), 200
-
-    # Find host's Slack user by email
-    try:
-        result  = slack_app.client.users_lookupByEmail(email=host_email)
-        user_id = result["user"]["id"]
-    except Exception:
-        return jsonify({"status": "host not found in Slack"}), 200
-
-    # Analyse the transcript
-    analysis = is_doc_worthy(transcript_text[:3000])
-
-    state[user_id] = {
-        "step":           "awaiting_action",
-        "content":        transcript_text,
-        "source":         "zoom",
-        "suggested_type": analysis.get("suggested_type", "step-by-step guide"),
-    }
-
-    slack_app.client.chat_postMessage(
-        channel=user_id,
-        text=(
-            f"Hey — VicSherlock here. I just analysed your Zoom recording: *{topic}*\n\n"
-            f"{'*What I found:* ' + analysis.get('summary','') + chr(10) + chr(10) if analysis.get('summary') else ''}"
-            f"Would you like me to create a doc from this?\n"
-            f"• Reply *new* to create a new guide\n"
-            f"• Reply *update* + paste an existing article link to update it\n"
-            f"• Reply *skip* to ignore\n\n"
-            f"I'd suggest a *{analysis.get('suggested_type','guide')}*."
-        ),
-    )
-
-    return jsonify({"status": "ok"}), 200
+        return scan_results
 
 
-# ── Slack event endpoint ──────────────────────────────────────────────────────
+def create_slack_bot_scanner() -> Optional[SlackBotScanner]:
+    """Factory function to create a SlackBotScanner with environment variables."""
+    slack_token = os.getenv("SLACK_BOT_TOKEN")
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
 
-@flask_app.route("/slack/events", methods=["POST"])
-def slack_events():
-    return handler.handle(request)
+    if not slack_token:
+        logger.warning("SLACK_BOT_TOKEN not found in environment variables")
+        return None
 
+    if not anthropic_key:
+        logger.warning("ANTHROPIC_API_KEY not found in environment variables")
+        return None
 
-# ── Health check ──────────────────────────────────────────────────────────────
-
-@flask_app.route("/health", methods=["GET"])
-def health():
-    return jsonify({"status": "VicSherlock is watching"}), 200
-
-
-# ── Entry point ───────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    port  = int(os.environ.get("PORT", 3000))
-    flask_app.run(host="0.0.0.0", port=port, debug=False)
+    return SlackBotScanner(slack_token, anthropic_key)
