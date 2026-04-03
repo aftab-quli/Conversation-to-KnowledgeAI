@@ -301,6 +301,58 @@
       <div class="file-name" id="fileName"></div>
     </div>
 
+    <!-- Transcription Section (appears after file upload) -->
+    <div id="transcriptionSection" style="display: none; margin-bottom: 24px;">
+      <div style="margin-bottom: 16px;">
+        <label>Video Transcript</label>
+        <p style="font-size: 13px; color: #666; margin-bottom: 12px;">
+          Use browser-based transcription or enter manually.
+        </p>
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <button id="transcribeBtn" type="button" style="
+            flex: 1;
+            background: #1e1333;
+            border: 1px solid #7c3aed;
+            border-radius: 10px;
+            padding: 12px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #a78bfa;
+            cursor: pointer;
+            transition: background 0.2s;
+          " onclick="startBrowserTranscription()" disabled>
+            🎙 Transcribe in Browser
+          </button>
+          <button id="stopTranscribeBtn" type="button" style="
+            display: none;
+            flex: 1;
+            background: #5c2626;
+            border: 1px solid #f87171;
+            border-radius: 10px;
+            padding: 12px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #f87171;
+            cursor: pointer;
+            transition: background 0.2s;
+          " onclick="stopBrowserTranscription()">
+            ⏹ Stop
+          </button>
+        </div>
+        <div id="transcriptionStatus" style="
+          display: none;
+          font-size: 13px;
+          color: #a78bfa;
+          margin-bottom: 12px;
+          padding: 8px 12px;
+          background: #1e1333;
+          border-radius: 8px;
+          border: 1px solid #4c1d95;
+        "></div>
+      </div>
+      <textarea id="transcript" rows="5" placeholder="Transcript will appear here..."></textarea>
+    </div>
+
     <!-- Instructions -->
     <div class="field">
       <label>Instructions</label>
@@ -372,6 +424,23 @@
       selectedFile = file;
       dropZone.classList.add('has-file');
       document.getElementById('fileName').textContent = file.name + ' (' + formatSize(file.size) + ')';
+
+      // Show transcription section and enable transcribe button if speech API is available
+      const transcriptionSection = document.getElementById('transcriptionSection');
+      transcriptionSection.style.display = 'block';
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const transcribeBtn = document.getElementById('transcribeBtn');
+      transcribeBtn.disabled = !SpeechRecognition;
+
+      if (!SpeechRecognition) {
+        const status = document.getElementById('transcriptionStatus');
+        status.style.display = 'block';
+        status.textContent = 'Speech API not supported in this browser. Please enter transcript manually.';
+        status.style.background = '#5c2626';
+        status.style.borderColor = '#f87171';
+        status.style.color = '#f87171';
+      }
     }
 
     function formatSize(bytes) {
@@ -415,6 +484,12 @@
       formData.append('video', selectedFile);
       formData.append('instructions', instructions);
       formData.append('doc_type', getSelectedType());
+
+      // Include transcript if available
+      const transcript = document.getElementById('transcript').value.trim();
+      if (transcript) {
+        formData.append('transcript', transcript);
+      }
 
       try {
         const res = await fetch('/upload', {
@@ -482,6 +557,129 @@
           <a class="download-btn" href="/download/${file.filename}" download>⬇ Download</a>
         </div>
       `;
+    }
+
+    // ===== Browser-based transcription using Web Speech API =====
+    let currentRecognition = null;
+    let isTranscribing = false;
+
+    function startBrowserTranscription() {
+      if (!selectedFile) {
+        alert('Please select a video file first.');
+        return;
+      }
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        showTranscriptionError('Speech Recognition API not supported in this browser.');
+        return;
+      }
+
+      isTranscribing = true;
+      document.getElementById('transcribeBtn').style.display = 'none';
+      document.getElementById('stopTranscribeBtn').style.display = 'block';
+
+      const status = document.getElementById('transcriptionStatus');
+      status.style.display = 'block';
+      status.textContent = 'Starting transcription... playing video audio';
+      status.style.background = '#1e1333';
+      status.style.borderColor = '#4c1d95';
+      status.style.color = '#a78bfa';
+
+      // Create a video element to play the audio
+      const videoUrl = URL.createObjectURL(selectedFile);
+      const video = document.createElement('video');
+      video.src = videoUrl;
+      video.style.display = 'none';
+      document.body.appendChild(video);
+
+      // Set up speech recognition
+      currentRecognition = new SpeechRecognition();
+      currentRecognition.continuous = true;
+      currentRecognition.interimResults = true;
+      currentRecognition.language = 'en-US';
+
+      let finalTranscript = '';
+      let interimTranscript = '';
+
+      currentRecognition.onstart = () => {
+        status.textContent = 'Listening... ';
+      };
+
+      currentRecognition.onresult = (event) => {
+        interimTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript + ' ';
+          } else {
+            interimTranscript += transcript;
+          }
+        }
+
+        // Update textarea with results
+        document.getElementById('transcript').value = finalTranscript + interimTranscript;
+
+        // Update status
+        status.textContent = 'Listening... ' + (finalTranscript.length > 0 ? `${finalTranscript.split(' ').length} words captured` : 'waiting for speech');
+      };
+
+      currentRecognition.onerror = (event) => {
+        status.style.background = '#5c2626';
+        status.style.borderColor = '#f87171';
+        status.style.color = '#f87171';
+        status.textContent = 'Error: ' + event.error;
+      };
+
+      currentRecognition.onend = () => {
+        isTranscribing = false;
+        document.getElementById('stopTranscribeBtn').style.display = 'none';
+        document.getElementById('transcribeBtn').style.display = 'block';
+
+        const finalText = document.getElementById('transcript').value;
+        if (finalText.trim()) {
+          status.style.background = '#1a3a1a';
+          status.style.borderColor = '#22c55e';
+          status.style.color = '#22c55e';
+          status.textContent = 'Transcription complete. Review and edit as needed.';
+        } else {
+          status.style.background = '#5c2626';
+          status.style.borderColor = '#f87171';
+          status.style.color = '#f87171';
+          status.textContent = 'No speech detected. Please try again or enter manually.';
+        }
+
+        // Cleanup
+        video.pause();
+        URL.revokeObjectURL(videoUrl);
+        document.body.removeChild(video);
+      };
+
+      // Start recognition and play video
+      try {
+        currentRecognition.start();
+        video.play().catch(e => {
+          status.textContent = 'Unable to play video audio: ' + e.message;
+          currentRecognition.stop();
+        });
+      } catch (e) {
+        showTranscriptionError('Error starting transcription: ' + e.message);
+      }
+    }
+
+    function stopBrowserTranscription() {
+      if (currentRecognition && isTranscribing) {
+        currentRecognition.stop();
+      }
+    }
+
+    function showTranscriptionError(msg) {
+      const status = document.getElementById('transcriptionStatus');
+      status.style.display = 'block';
+      status.style.background = '#5c2626';
+      status.style.borderColor = '#f87171';
+      status.style.color = '#f87171';
+      status.textContent = msg;
     }
   </script>
 

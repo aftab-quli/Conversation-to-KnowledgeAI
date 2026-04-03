@@ -54,33 +54,51 @@ def allowed_file(filename: str) -> bool:
     return Path(filename).suffix.lower() in ALLOWED_EXTENSIONS
 
 
-def run_video_job(job_id: str, video_path: str, instructions: str, doc_type: str):
-    """Full pipeline: video → audio → transcript → frames → guide → docx."""
+def run_video_job(job_id: str, video_path: str, instructions: str, doc_type: str, transcript: str = None):
+    """Full pipeline: video → audio → transcript → frames → guide → docx.
+
+    If transcript is provided, skip audio extraction and Whisper transcription.
+    If transcript is None and OPENAI_API_KEY exists, use Whisper.
+    If transcript is None and no OPENAI_API_KEY, raise error.
+    """
     job = jobs[job_id]
     job_temp = TEMP_DIR / job_id
     job_temp.mkdir(parents=True, exist_ok=True)
 
     try:
-        # --- Step 1: Extract audio ---
-        job["step"] = "Extracting audio from video..."
-        job["progress"] = 10
-        logger.info(f"Job {job_id}: Extracting audio")
+        # --- Step 1 & 2: Handle transcription ---
+        if transcript:
+            # Use provided transcript
+            job["step"] = "Using provided transcript..."
+            job["progress"] = 25
+            logger.info(f"Job {job_id}: Using provided transcript")
+            transcript_text = transcript
+            segments = []
+        else:
+            # Fall back to Whisper if available
+            openai_key = os.getenv("OPENAI_API_KEY")
+            if not openai_key:
+                raise RuntimeError(
+                    "No transcript provided and OPENAI_API_KEY not set. "
+                    "Please provide a transcript via the browser transcription feature or set OPENAI_API_KEY."
+                )
 
-        audio_path = str(job_temp / "audio.wav")
-        extract_audio(video_path, audio_path)
+            # Extract audio
+            job["step"] = "Extracting audio from video..."
+            job["progress"] = 10
+            logger.info(f"Job {job_id}: Extracting audio")
 
-        # --- Step 2: Transcribe with Whisper ---
-        job["step"] = "Transcribing audio with Whisper..."
-        job["progress"] = 25
-        logger.info(f"Job {job_id}: Transcribing")
+            audio_path = str(job_temp / "audio.wav")
+            extract_audio(video_path, audio_path)
 
-        openai_key = os.getenv("OPENAI_API_KEY")
-        if not openai_key:
-            raise RuntimeError("Missing OPENAI_API_KEY in environment variables.")
+            # Transcribe with Whisper
+            job["step"] = "Transcribing audio with Whisper..."
+            job["progress"] = 25
+            logger.info(f"Job {job_id}: Transcribing")
 
-        transcript_result = transcribe_audio(audio_path, openai_key)
-        transcript_text = transcript_result["text"]
-        segments = transcript_result.get("segments", [])
+            transcript_result = transcribe_audio(audio_path, openai_key)
+            transcript_text = transcript_result["text"]
+            segments = transcript_result.get("segments", [])
 
         job["transcript_preview"] = transcript_text[:500] + "..." if len(transcript_text) > 500 else transcript_text
 
@@ -175,6 +193,7 @@ def upload():
 
     instructions = request.form.get("instructions", "").strip()
     doc_type = request.form.get("doc_type", "step-by-step").strip()
+    transcript = request.form.get("transcript", "").strip()
 
     if not instructions:
         return jsonify({"error": "Please provide instructions for the guide."}), 400
@@ -197,7 +216,7 @@ def upload():
     # Run in background
     thread = threading.Thread(
         target=run_video_job,
-        args=(job_id, video_path, instructions, doc_type)
+        args=(job_id, video_path, instructions, doc_type, transcript if transcript else None)
     )
     thread.daemon = True
     thread.start()
