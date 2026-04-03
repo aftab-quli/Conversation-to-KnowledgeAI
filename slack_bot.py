@@ -24,7 +24,8 @@ slack_app = App(
     signing_secret=os.environ.get("SLACK_SIGNING_SECRET"),
 )
 handler = SlackRequestHandler(slack_app)
-claude  = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+_anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+claude = Anthropic(api_key=_anthropic_key) if _anthropic_key else None
 
 # ── In-memory conversation state (per user DM thread) ────────────────────────
 # state[user_id] = {
