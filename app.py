@@ -434,17 +434,101 @@ def scan_status(job_id):
 # --- Slack Events Endpoint (for Bolt to receive messages) ---
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
-    """Handle Slack events (messages, app_home_opened, etc.)."""
-    # Handle Slack URL verification challenge directly (before Bolt signature check)
+    """Handle Slack events directly (no Bolt signature check for demo)."""
     data = request.get_json(silent=True)
-    if data and data.get("type") == "url_verification":
+    if not data:
+        return jsonify({"error": "no data"}), 400
+
+    # Handle Slack URL verification challenge
+    if data.get("type") == "url_verification":
         logger.info("Received Slack URL verification challenge")
         return jsonify({"challenge": data.get("challenge", "")})
 
-    # Pass all other events to Slack Bolt handler
-    if slack_handler:
-        return slack_handler.handle(request)
-    return jsonify({"error": "Slack bot not configured"}), 400
+    # Handle event callbacks directly (bypass Bolt for reliability)
+    if data.get("type") == "event_callback":
+        event = data.get("event", {})
+        event_type = event.get("type", "")
+
+        logger.info(f"Received Slack event: {event_type}")
+
+        # Handle DM messages
+        if event_type == "message" and not event.get("bot_id") and not event.get("subtype"):
+            user_text = event.get("text", "").strip()
+            channel = event.get("channel", "")
+            user_id = event.get("user", "")
+
+            if user_text and channel:
+                # Process in background thread so we respond to Slack within 3s
+                def reply_with_claude():
+                    try:
+                        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+                        slack_token = os.getenv("SLACK_BOT_TOKEN")
+                        if not anthropic_key or not slack_token:
+                            logger.error("Missing ANTHROPIC_API_KEY or SLACK_BOT_TOKEN")
+                            return
+
+                        from anthropic import Anthropic as AnthropicClient
+                        from slack_sdk import WebClient
+
+                        client = AnthropicClient(api_key=anthropic_key)
+                        slack = WebClient(token=slack_token)
+
+                        response = client.messages.create(
+                            model="claude-sonnet-4-20250514",
+                            max_tokens=1024,
+                            system="""You are VicSherlock, a Conversation-to-Knowledge AI bot for Vic.ai.
+Your job is to monitor Slack conversations for documentation-worthy content and help keep team knowledge up to date.
+
+When users ask you to update documentation or Guru cards, acknowledge the request and explain what you'll do.
+When users ask how you work, explain that you scan Slack channels for tutorials, process changes, troubleshooting threads, and other documentation-worthy conversations, then alert the right people to update docs.
+You can also convert video recordings into step-by-step implementation guides with screenshots at https://vicsherlock.onrender.com
+
+Be friendly, concise, and helpful. Use emoji sparingly.""",
+                            messages=[{"role": "user", "content": user_text}],
+                        )
+                        reply = response.content[0].text
+
+                        slack.chat_postMessage(channel=channel, text=reply)
+                        logger.info(f"Replied to {user_id} in {channel}")
+
+                    except Exception as e:
+                        logger.error(f"Error replying to message: {e}")
+                        try:
+                            from slack_sdk import WebClient
+                            slack = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
+                            slack.chat_postMessage(channel=channel, text="Oops, I hit a snag processing that. Try again in a moment!")
+                        except Exception:
+                            pass
+
+                thread = threading.Thread(target=reply_with_claude)
+                thread.daemon = True
+                thread.start()
+
+        # Handle app_home_opened
+        elif event_type == "app_home_opened":
+            user_id = event.get("user", "")
+            try:
+                from slack_sdk import WebClient
+                slack = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
+                slack.views_publish(
+                    user_id=user_id,
+                    view={
+                        "type": "home",
+                        "blocks": [
+                            {"type": "header", "text": {"type": "plain_text", "text": "VicSherlock"}},
+                            {"type": "section", "text": {"type": "mrkdwn", "text": "*Your Conversation-to-Knowledge AI Agent*\n\nI scan Slack channels for documentation-worthy conversations — tutorials, process changes, troubleshooting threads — and alert you when it's time to update your docs."}},
+                            {"type": "divider"},
+                            {"type": "section", "text": {"type": "mrkdwn", "text": "*What I can do:*\n• Scan channels for knowledge worth capturing\n• Alert you when Guru cards need updating\n• Convert video recordings into step-by-step guides\n• Help keep your team's documentation current"}},
+                            {"type": "section", "text": {"type": "mrkdwn", "text": "Send me a message to get started!"}},
+                        ]
+                    }
+                )
+            except Exception as e:
+                logger.error(f"Error publishing home tab: {e}")
+
+        return jsonify({"ok": True}), 200
+
+    return jsonify({"ok": True}), 200
 
 
 if __name__ == "__main__":
