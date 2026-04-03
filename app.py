@@ -648,10 +648,13 @@ def transcribe():
     audio_path = video_path + ".wav"
 
     try:
-        import ffmpeg
-        ffmpeg.input(video_path).output(
-            audio_path, ac=1, ar="16000", acodec="pcm_s16le"
-        ).overwrite_output().run(quiet=True)
+        import subprocess
+        import imageio_ffmpeg
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        subprocess.run(
+            [ffmpeg_exe, "-y", "-i", video_path, "-ac", "1", "-ar", "16000", "-acodec", "pcm_s16le", audio_path],
+            check=True, capture_output=True
+        )
 
         from faster_whisper import WhisperModel
         model = WhisperModel("tiny", device="cpu", compute_type="int8")

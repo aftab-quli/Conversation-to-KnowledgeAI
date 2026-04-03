@@ -2,7 +2,7 @@ services:
   - type: web
     name: vicsherlock
     env: python
-    buildCommand: apt-get install -y ffmpeg && pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app --timeout 300
     envVars:
       - key: ANTHROPIC_API_KEY
