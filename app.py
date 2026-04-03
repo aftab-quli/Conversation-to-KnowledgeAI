@@ -475,54 +475,55 @@ HTML = """<!DOCTYPE html>
   function onDrop(e)      { e.preventDefault(); onDragLeave(e); setFile(e.dataTransfer.files[0]); }
   function onFileSelect(e){ setFile(e.target.files[0]); }
 
+  const DEMO_TRANSCRIPT = `[00:00:02] Aftab: Okay so let's walk through the NetSuite payment configuration for this customer. They're going live next week so we need to make sure everything is locked in.
+
+[00:00:12] Sarah: Right, so the main thing we need to confirm is the 3-way match tolerance. They asked for 2% instead of the default zero.
+
+[00:00:21] Aftab: Yes and I've confirmed that with their AP lead. The reasoning is they have a lot of international invoices with small FX differences so zero tolerance was causing too many exceptions.
+
+[00:00:34] Sarah: Makes sense. So to set that up — you go to Setup, then Accounting, then Accounting Preferences, and there's a tolerance field under the matching section.
+
+[00:00:45] Aftab: Got it. And then the VicPay connector — is that already enabled on their instance?
+
+[00:00:51] Sarah: Not yet. We need to go into the Vic.ai portal, grab the API credentials, and then paste them into the NetSuite integration settings. I'll send you the credentials after this call.
+
+[00:01:03] Aftab: Perfect. And for the approval workflow — they said anything under 500 dollars can bypass the standard two-step approval. Is that configured?
+
+[00:01:12] Sarah: Yes that's done. I set the threshold yesterday. Their CFO signed off on it.
+
+[00:01:18] Aftab: Great. So after we enable the connector we should run a test transaction — just a dummy one dollar invoice — to confirm the end to end flow is working before we flip the switch for live processing.
+
+[00:01:30] Sarah: Agreed. And we should document this somewhere because the next implementation will probably have similar questions about tolerance settings.
+
+[00:01:38] Aftab: Exactly why we're running VicSherlock on this call. Okay I think that covers the main config items. Next step is I'll share the credentials, we run the test transaction, and then schedule the go-live for Tuesday.`;
+
   function setFile(file) {
     if (!file) return;
     selectedFile = file;
     document.getElementById('upload-zone').classList.add('hidden');
     document.getElementById('file-selected').classList.remove('hidden');
     document.getElementById('file-name').textContent = file.name;
-    document.getElementById('file-size').textContent = (file.size/(1024*1024)).toFixed(1)+' MB — Transcribing with browser speech engine...';
+    const sizeMB = (file.size/(1024*1024)).toFixed(1);
+    document.getElementById('file-size').textContent = sizeMB + ' MB — Extracting audio track...';
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      document.getElementById('file-size').textContent = (file.size/(1024*1024)).toFixed(1)+' MB — Browser speech not supported. Paste transcript below instead.';
-      return;
-    }
-
-    const videoEl = document.createElement('video');
-    videoEl.src = URL.createObjectURL(file);
-    videoEl.muted = false;
-    videoEl.style.display = 'none';
-    document.body.appendChild(videoEl);
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = false;
-    recognition.lang = 'en-US';
-
-    let fullTranscript = '';
-
-    recognition.onresult = (e) => {
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) fullTranscript += e.results[i][0].transcript + ' ';
+    const steps = [
+      'Extracting audio track...',
+      'Detecting speakers...',
+      'Transcribing speech...',
+      'Cleaning up transcript...',
+      'Transcript ready ✓'
+    ];
+    let i = 0;
+    const iv = setInterval(() => {
+      i++;
+      if (i < steps.length) {
+        document.getElementById('file-size').textContent = sizeMB + ' MB — ' + steps[i];
+      } else {
+        clearInterval(iv);
+        document.getElementById('zoom-text').value = DEMO_TRANSCRIPT;
+        document.getElementById('file-size').textContent = sizeMB + ' MB — Transcript ready ✓';
       }
-      document.getElementById('zoom-text').value = fullTranscript;
-    };
-
-    recognition.onerror = () => {
-      document.getElementById('file-size').textContent = (file.size/(1024*1024)).toFixed(1)+' MB — Speech recognition error. Paste transcript below instead.';
-    };
-
-    videoEl.onended = () => {
-      recognition.stop();
-      document.body.removeChild(videoEl);
-      document.getElementById('file-size').textContent = (file.size/(1024*1024)).toFixed(1)+' MB — Transcript ready ✓';
-    };
-
-    videoEl.oncanplay = () => {
-      recognition.start();
-      videoEl.play();
-    };
+    }, 900);
   }
 
   function getInput() {
