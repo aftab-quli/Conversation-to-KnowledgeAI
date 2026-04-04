@@ -23,6 +23,9 @@ class GongClient:
         # Ensure we're hitting the API endpoint, not the website
         if "api.gong.io" not in self.base_url:
             self.base_url = GONG_API_BASE
+        # Ensure /v2 is included in the base URL
+        if not self.base_url.endswith("/v2"):
+            self.base_url = self.base_url.rstrip("/") + "/v2"
 
     @property
     def is_configured(self):
