@@ -47,6 +47,11 @@ def _lazy_import_video_modules():
         transcriber = _tr
 
 try:
+    from gong_client import get_gong_findings
+except ImportError:
+    get_gong_findings = None
+
+try:
     from slack_bot import create_slack_bot_scanner
 except ImportError:
     create_slack_bot_scanner = None
@@ -590,19 +595,30 @@ def slack_events():
                             logger.error(f"Error during live scan: {scan_err}")
                             live_findings = "Could not perform live scan at this time."
 
-                        system_prompt = f"""You are VicSherlock, a Conversation-to-Knowledge AI bot for Vic.ai.
-Your job is to monitor Slack conversations for documentation-worthy content and help keep team knowledge up to date.
+                        # --- Gong integration: fetch recent call transcripts ---
+                        gong_findings = ""
+                        try:
+                            if get_gong_findings:
+                                gong_findings = get_gong_findings()
+                        except Exception as gong_err:
+                            logger.error(f"Error fetching Gong data: {gong_err}")
 
-You actively scan Slack channels for tutorials, process changes, troubleshooting threads, and other documentation-worthy conversations, then alert the right people to update docs.
+                        system_prompt = f"""You are VicSherlock, a Conversation-to-Knowledge AI bot for Vic.ai.
+Your job is to monitor Slack conversations AND Gong calls for documentation-worthy content and help keep team knowledge up to date.
+
+You actively scan Slack channels and Gong call recordings for tutorials, process changes, troubleshooting threads, and other documentation-worthy conversations, then alert the right people to update docs.
 You can also convert video recordings into step-by-step implementation guides with screenshots at https://vicsherlock.onrender.com
 
 {live_findings}
 
-Based on the messages above, identify documentation-worthy content: process changes, tutorials, troubleshooting guides, new procedures, training content, or anything that should be captured in a knowledge base or Guru card.
+{gong_findings}
 
-When users ask about recent findings, analyze the real messages above and share what you've found.
+Based on all the data above (Slack messages AND Gong calls), identify documentation-worthy content: process changes, tutorials, troubleshooting guides, new procedures, training content, customer insights, or anything that should be captured in a knowledge base or Guru card.
+
+When users ask about recent findings, analyze the real data above and share what you've found from BOTH Slack and Gong.
 When users ask you to update documentation or Guru cards, acknowledge the request and explain what steps are needed.
-When users ask about a specific person or topic, search through the messages above for relevant content.
+When users ask about a specific person or topic, search through all the data above for relevant content.
+When users ask about calls or meetings, use the Gong call data.
 
 Be friendly, concise, and helpful. Use emoji sparingly."""
 
