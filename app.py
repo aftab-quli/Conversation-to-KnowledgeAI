@@ -583,17 +583,25 @@ def slack_events():
                         live_findings = ""
                         try:
                             channels_to_scan = []
-                            # Get channels the bot is in
-                            ch_result = slack.conversations_list(types="public_channel,private_channel", limit=50)
-                            for ch in ch_result.get("channels", []):
-                                if ch.get("is_member"):
-                                    channels_to_scan.append({"id": ch["id"], "name": ch.get("name", "unknown")})
+                            # Get ALL channels the bot is in (with pagination)
+                            cursor = None
+                            while True:
+                                kwargs = {"types": "public_channel,private_channel", "limit": 200}
+                                if cursor:
+                                    kwargs["cursor"] = cursor
+                                ch_result = slack.conversations_list(**kwargs)
+                                for ch in ch_result.get("channels", []):
+                                    if ch.get("is_member"):
+                                        channels_to_scan.append({"id": ch["id"], "name": ch.get("name", "unknown")})
+                                cursor = ch_result.get("response_metadata", {}).get("next_cursor")
+                                if not cursor:
+                                    break
 
                             scan_snippets = []
                             import time
                             one_week_ago = str(time.time() - 7 * 86400)  # last 7 days
 
-                            for ch_info in channels_to_scan[:10]:  # scan up to 10 channels
+                            for ch_info in channels_to_scan:  # scan ALL channels bot is in
                                 try:
                                     history = slack.conversations_history(
                                         channel=ch_info["id"],
