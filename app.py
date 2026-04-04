@@ -582,51 +582,47 @@ def slack_events():
                         # --- Live Slack scan: fetch recent messages from channels ---
                         live_findings = ""
                         try:
+                            import time
+
+                            # Build a user cache with ONE bulk call instead of per-message lookups
+                            _user_cache = {}
+                            try:
+                                users_resp = slack.users_list(limit=200)
+                                for u in users_resp.get("members", []):
+                                    _user_cache[u["id"]] = u.get("real_name") or u.get("name", u["id"])
+                            except Exception:
+                                pass  # If user list fails, we'll just use IDs
+
+                            # Get channels the bot is in (single page is fine for most workspaces)
                             channels_to_scan = []
-                            # Get ALL channels the bot is in (with pagination)
-                            cursor = None
-                            while True:
-                                kwargs = {"types": "public_channel,private_channel", "limit": 200}
-                                if cursor:
-                                    kwargs["cursor"] = cursor
-                                ch_result = slack.conversations_list(**kwargs)
-                                for ch in ch_result.get("channels", []):
-                                    if ch.get("is_member"):
-                                        channels_to_scan.append({"id": ch["id"], "name": ch.get("name", "unknown")})
-                                cursor = ch_result.get("response_metadata", {}).get("next_cursor")
-                                if not cursor:
-                                    break
+                            ch_result = slack.conversations_list(types="public_channel,private_channel", limit=200)
+                            for ch in ch_result.get("channels", []):
+                                if ch.get("is_member"):
+                                    channels_to_scan.append({"id": ch["id"], "name": ch.get("name", "unknown")})
 
                             scan_snippets = []
-                            import time
-                            one_week_ago = str(time.time() - 7 * 86400)  # last 7 days
+                            one_week_ago = str(time.time() - 7 * 86400)
 
-                            for ch_info in channels_to_scan:  # scan ALL channels bot is in
+                            for ch_info in channels_to_scan:
                                 try:
                                     history = slack.conversations_history(
                                         channel=ch_info["id"],
                                         oldest=one_week_ago,
-                                        limit=15
+                                        limit=10
                                     )
                                     for msg in history.get("messages", []):
                                         text = msg.get("text", "").strip()
-                                        if len(text) > 50:  # skip short messages
-                                            user_info_id = msg.get("user", "unknown")
-                                            # Try to get user name
-                                            try:
-                                                u = slack.users_info(user=user_info_id)
-                                                username = u["user"]["real_name"]
-                                            except Exception:
-                                                username = user_info_id
-                                            ts = msg.get("ts", "")
+                                        if len(text) > 50:
+                                            uid = msg.get("user", "unknown")
+                                            username = _user_cache.get(uid, uid)
                                             scan_snippets.append(
-                                                f"[#{ch_info['name']}] {username}: {text[:500]}"
+                                                f"[#{ch_info['name']}] {username}: {text[:300]}"
                                             )
-                                except Exception as ch_err:
-                                    logger.warning(f"Could not scan #{ch_info['name']}: {ch_err}")
+                                except Exception:
+                                    pass  # Skip channels we can't read
 
                             if scan_snippets:
-                                live_findings = "RECENT MESSAGES FROM SLACK CHANNELS (last 7 days):\n\n" + "\n\n".join(scan_snippets[:30])
+                                live_findings = "RECENT MESSAGES FROM SLACK CHANNELS (last 7 days):\n\n" + "\n\n".join(scan_snippets[:40])
                             else:
                                 live_findings = "No recent messages found in scanned channels."
 
