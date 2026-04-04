@@ -187,6 +187,9 @@ for d in [UPLOAD_DIR, TEMP_DIR, OUTPUT_DIR]:
 # Job tracking
 jobs = {}
 
+# Event log for diagnostics
+_recent_events = []
+
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
 
 
@@ -475,6 +478,11 @@ def slack_events():
 
         logger.info(f"Received Slack event: {event_type} | Full event: {event}")
 
+        # Store recent events for diagnostics
+        _recent_events.append({"type": event_type, "event": event, "ts": str(datetime.now())})
+        if len(_recent_events) > 20:
+            _recent_events.pop(0)
+
         # Handle assistant_thread_started (from Agents & AI Apps feature)
         if event_type == "assistant_thread_started":
             thread_context = event.get("assistant_thread", {})
@@ -719,6 +727,12 @@ def scanner_status():
             return jsonify(_last_scan_results), 200
         else:
             return jsonify({"status": "no_scans_yet"}), 200
+
+
+@app.route("/debug-events")
+def debug_events():
+    """Show recent Slack events for debugging."""
+    return jsonify({"recent_events": _recent_events, "count": len(_recent_events)})
 
 
 @app.route("/send-finding", methods=["POST", "GET"])
