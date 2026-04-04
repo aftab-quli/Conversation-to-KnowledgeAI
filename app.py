@@ -764,6 +764,42 @@ def scan_status():
             return jsonify({"status": "no_scans_yet"}), 200
 
 
+@app.route("/send-finding", methods=["POST"])
+def send_finding():
+    """Send a test finding message as VicSherlock bot to the DM channel."""
+    slack_token = os.getenv("SLACK_BOT_TOKEN")
+    if not slack_token:
+        return jsonify({"error": "no SLACK_BOT_TOKEN"}), 500
+
+    data = request.get_json() or {}
+    channel_name = data.get("channel_name", "#customer_stonewall-kitchen")
+    author = data.get("author", "Anthony Margaritondo")
+    topic = data.get("topic", "Approval Flow Behavior When Invoice Fields Are Modified")
+    preview = data.get("preview", "Looking into how approvers change if someone modifies an invoice and changes a field that affects the approval flow...")
+    target_channel = data.get("target_channel", os.getenv("NOTIFY_CHANNEL_ID", "D09JP0H2DSN"))
+
+    try:
+        from slack_sdk import WebClient
+        slack = WebClient(token=slack_token)
+
+        message = (
+            f"Hey! I just scanned your Slack channels and noticed something in *{channel_name}* from *{author}* that looks like it should be documented:\n\n"
+            f"*{topic}*\n\n"
+            f"> {preview}\n\n"
+            "Would you like me to:\n"
+            "• *Create a new doc* from this conversation?\n"
+            "• *Update an existing doc* — just send me the current doc/PDF and I'll revise it!\n\n"
+            "Just reply here and let me know!"
+        )
+
+        result = slack.chat_postMessage(channel=target_channel, text=message, mrkdwn=True)
+        return jsonify({"ok": True, "ts": result["ts"]}), 200
+
+    except Exception as e:
+        logger.error(f"Error sending finding: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 # Start the background scanner when the app loads
 start_background_scanner()
 
