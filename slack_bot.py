@@ -335,8 +335,8 @@ Format: YES/NO | Explanation | Title"""
             "skipped": 0,
         }
 
-        # Who to DM — defaults to Aftab
-        target_user = notify_user_id or os.getenv("NOTIFY_USER_ID", "U09J7FWMEKZ")
+        # Send to the VicSherlock bot DM channel with Aftab (not user DM)
+        target_user = notify_user_id or os.getenv("NOTIFY_CHANNEL_ID", "D09JP0H2DSN")
 
         for entry in documentation_worthy:
             try:
