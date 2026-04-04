@@ -142,7 +142,7 @@
   <div class="wrapper">
     <div class="logo">vic.ai &middot; vicsherlock</div>
     <h1>VicSherlock</h1>
-    <p class="subtitle">Drop a video recording. Get a complete step-by-step guide with screenshots &mdash; in minutes.</p>
+    <p class="subtitle">Drop a video recording or paste a transcript. Get a complete step-by-step guide &mdash; in minutes.</p>
 
     <div class="card">
 
@@ -159,8 +159,8 @@
 
       <!-- Transcript -->
       <div class="field">
-        <label>Transcript (optional)</label>
-        <div class="field-hint">Leave empty to auto-transcribe from video, or paste a transcript to skip transcription.</div>
+        <label>Transcript</label>
+        <div class="field-hint">Paste a transcript, Slack conversation, or meeting notes. If you also upload a video, this will be used instead of auto-transcription.</div>
         <textarea id="transcript" rows="5" placeholder="Paste your video transcript, Slack conversation, or Zoom meeting notes here..."></textarea>
       </div>
 
@@ -255,8 +255,6 @@
     }
 
     async function generate() {
-      if (!selectedFile) { alert('Please select a video file.'); return; }
-
       const instructions = document.getElementById('instructions').value.trim();
       if (!instructions) { alert('Please provide instructions for the guide.'); return; }
 
@@ -268,22 +266,50 @@
       document.getElementById('progressSection').style.display = 'block';
       document.getElementById('generateBtn').disabled = true;
       document.getElementById('progressBar').style.width = '5%';
-      document.getElementById('stepText').textContent = 'Uploading video...';
 
-      const formData = new FormData();
-      formData.append('video', selectedFile);
-      formData.append('instructions', instructions);
-      formData.append('doc_type', getSelectedType());
-      formData.append('transcript', transcript);
+      if (selectedFile) {
+        // Video mode — upload video + optional transcript
+        document.getElementById('stepText').textContent = 'Uploading video...';
+        const formData = new FormData();
+        formData.append('video', selectedFile);
+        formData.append('instructions', instructions);
+        formData.append('doc_type', getSelectedType());
+        formData.append('transcript', transcript);
 
-      try {
-        const res = await fetch('/upload', { method: 'POST', body: formData });
-        const data = await res.json();
-        if (data.error) { showError(data.error); return; }
-        currentJobId = data.job_id;
-        pollInterval = setInterval(pollStatus, 2000);
-      } catch (e) {
-        showError('Could not connect to server.');
+        try {
+          const res = await fetch('/upload', { method: 'POST', body: formData });
+          const data = await res.json();
+          if (data.error) { showError(data.error); return; }
+          currentJobId = data.job_id;
+          pollInterval = setInterval(pollStatus, 2000);
+        } catch (e) {
+          showError('Could not connect to server.');
+        }
+      } else if (transcript) {
+        // Text-only mode — generate guide from transcript
+        document.getElementById('stepText').textContent = 'Generating guide from transcript...';
+
+        try {
+          const res = await fetch('/generate-from-text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              transcript: transcript,
+              instructions: instructions,
+              doc_type: getSelectedType()
+            })
+          });
+          const data = await res.json();
+          if (data.error) { showError(data.error); return; }
+          currentJobId = data.job_id;
+          pollInterval = setInterval(pollStatus, 2000);
+        } catch (e) {
+          showError('Could not connect to server.');
+        }
+      } else {
+        alert('Please upload a video or paste a transcript.');
+        document.getElementById('progressSection').style.display = 'none';
+        document.getElementById('generateBtn').disabled = false;
       }
     }
 

@@ -205,6 +205,80 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/generate-from-text", methods=["POST"])
+def generate_from_text():
+    """Generate a guide from pasted transcript text (no video needed)."""
+    data = request.get_json(silent=True) or {}
+    transcript = data.get("transcript", "").strip()
+    instructions = data.get("instructions", "").strip()
+    doc_type = data.get("doc_type", "step-by-step")
+
+    if not transcript:
+        return jsonify({"error": "Please paste a transcript."}), 400
+    if not instructions:
+        return jsonify({"error": "Please provide instructions."}), 400
+
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {
+        "status": "running",
+        "step": "Generating guide from transcript...",
+        "progress": 10,
+        "file": None,
+        "error": None,
+    }
+
+    def run_text_job(_job_id=job_id, _transcript=transcript, _instructions=instructions, _doc_type=doc_type):
+        try:
+            from anthropic import Anthropic as _AC
+
+            jobs[_job_id]["step"] = "Analyzing transcript with Claude..."
+            jobs[_job_id]["progress"] = 30
+
+            client = _AC(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+            type_prompts = {
+                "step-by-step": "Create a detailed step-by-step guide with numbered steps, clear actions, and expected outcomes for each step.",
+                "faq": "Create an FAQ document with questions and answers extracted from the content.",
+                "troubleshooting": "Create a troubleshooting guide with common issues, symptoms, and solutions.",
+            }
+            type_instruction = type_prompts.get(_doc_type, type_prompts["step-by-step"])
+
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=4096,
+                system=f"You are an expert technical writer. {type_instruction} Format the output in clean Markdown.",
+                messages=[{
+                    "role": "user",
+                    "content": f"Instructions: {_instructions}\n\nTranscript/Source Content:\n{_transcript[:15000]}"
+                }],
+            )
+            guide_text = response.content[0].text
+
+            jobs[_job_id]["step"] = "Building document..."
+            jobs[_job_id]["progress"] = 70
+
+            # Save as markdown file
+            output_filename = f"guide_{_job_id[:8]}.md"
+            output_path = OUTPUT_DIR / output_filename
+            with open(output_path, "w") as f:
+                f.write(guide_text)
+
+            jobs[_job_id]["step"] = "Done!"
+            jobs[_job_id]["progress"] = 100
+            jobs[_job_id]["status"] = "done"
+            jobs[_job_id]["file"] = output_filename
+
+        except Exception as e:
+            logger.error(f"Error in text job: {e}")
+            jobs[_job_id]["status"] = "error"
+            jobs[_job_id]["error"] = str(e)
+
+    thread = threading.Thread(target=run_text_job)
+    thread.daemon = True
+    thread.start()
+    return jsonify({"job_id": job_id})
+
+
 @app.route("/upload", methods=["POST"])
 def upload():
     # Validate file
