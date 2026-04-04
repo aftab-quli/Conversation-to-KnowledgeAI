@@ -271,7 +271,8 @@ def generate_from_text():
             jobs[_job_id]["step"] = "Done!"
             jobs[_job_id]["progress"] = 100
             jobs[_job_id]["status"] = "done"
-            jobs[_job_id]["file"] = output_filename
+            jobs[_job_id]["file"] = {"name": f"Guide — {_instructions[:60]}", "filename": output_filename}
+            jobs[_job_id]["step_count"] = guide_text.count("\n## ") + guide_text.count("\n### ") + guide_text.count("\n1.") + guide_text.count("\n- **Step")
 
         except Exception as e:
             logger.error(f"Error in text job: {e}")
@@ -586,10 +587,16 @@ def slack_events():
                                 except Exception:
                                     pass  # Skip channels we can't read
 
+                            channel_names = [c["name"] for c in channels_to_scan]
+                            logger.info(f"Scanned {len(channels_to_scan)} channels: {channel_names}")
+                            logger.info(f"Found {len(scan_snippets)} message snippets")
+
                             if scan_snippets:
                                 live_findings = "RECENT MESSAGES FROM SLACK CHANNELS (last 7 days):\n\n" + "\n\n".join(scan_snippets[:40])
+                            elif channels_to_scan:
+                                live_findings = f"Scanned {len(channels_to_scan)} channels ({', '.join(channel_names[:10])}) but found no substantial messages in the last 7 days. The bot may need to be invited to more active channels."
                             else:
-                                live_findings = "No recent messages found in scanned channels."
+                                live_findings = "The bot is not a member of any channels yet. It needs to be invited to channels (e.g. /invite @VicSherlock in Slack) to scan conversations."
 
                         except Exception as scan_err:
                             logger.error(f"Error during live scan: {scan_err}")
