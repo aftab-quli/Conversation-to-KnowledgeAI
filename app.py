@@ -708,7 +708,7 @@ def run_channel_scan():
         logger.info(
             f"Scan complete: {results.get('channels_scanned', 0)} channels scanned, "
             f"{len(results.get('documentation_worthy', []))} findings, "
-            f"{results.get('notifications', {}).get('sent', 0)} notifications posted to #vicsherlock"
+            f"{results.get('notifications', {}).get('sent', 0)} DMs sent"
         )
         return results
 
@@ -751,7 +751,7 @@ def trigger_scan():
 
     thread = threading.Thread(target=do_scan, daemon=True)
     thread.start()
-    return jsonify({"status": "scan_started", "message": "Channel scan triggered — results will be posted to #vicsherlock"}), 200
+    return jsonify({"status": "scan_started", "message": "Channel scan triggered — findings will be DM'd to you"}), 200
 
 
 @app.route("/scan-status", methods=["GET"])

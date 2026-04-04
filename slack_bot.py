@@ -279,89 +279,51 @@ Format: YES/NO | Explanation | Title"""
             logger.error(f"Error analyzing thread with Claude: {e}")
             return False
 
-    def send_channel_notification(
-        self, target_channel: str, source_channel_name: str, thread_ts: str, topic: str,
+    def send_dm_notification(
+        self, user_id: str, channel_name: str, thread_ts: str, topic: str,
         preview: str = "", author_name: str = ""
     ) -> bool:
         """
-        Post a notification to the #vicsherlock channel about a documentation-worthy thread.
-
-        Args:
-            target_channel: Channel ID or name to post to (e.g. #vicsherlock)
-            source_channel_name: Name of channel where thread was found
-            thread_ts: Thread timestamp
-            topic: Topic/title of the documentation
-            preview: Short preview of the conversation
-            author_name: Name of the person who posted
-
-        Returns:
-            True if message sent successfully
+        Send a DM to a user about a documentation-worthy finding.
         """
         try:
-            author_line = f" by *{author_name}*" if author_name else ""
+            author_line = f" from *{author_name}*" if author_name else ""
 
             message = (
-                f":mag: *New finding in #{source_channel_name}*{author_line}\n\n"
+                f"Hey! I just noticed something in *#{channel_name}*{author_line} that looks like it should be documented:\n\n"
                 f"*{topic}*\n\n"
             )
 
             if preview:
-                snippet = preview[:300] + ("..." if len(preview) > 300 else "")
+                snippet = preview[:250] + ("..." if len(preview) > 250 else "")
                 message += f"> {snippet}\n\n"
 
             message += (
                 "Would you like me to:\n"
                 "• *Create a new doc* from this conversation?\n"
-                "• *Update an existing doc* — just send me the current doc and I'll revise it!\n\n"
-                "_Reply in this thread to let me know!_"
+                "• *Update an existing doc* — just send me the current doc/PDF and I'll revise it!\n\n"
+                "Just reply here and let me know!"
             )
 
-            response = self.slack_client.chat_postMessage(
-                channel=target_channel, text=message, mrkdwn=True
+            self.slack_client.chat_postMessage(
+                channel=user_id, text=message, mrkdwn=True
             )
-
-            logger.info(f"Notification posted to {target_channel} about thread in #{source_channel_name}")
+            logger.info(f"DM sent to {user_id} about thread in #{channel_name}")
             return True
 
         except SlackApiError as e:
-            logger.error(f"Error posting to {target_channel}: {e}")
+            logger.error(f"Error sending DM to {user_id}: {e}")
             return False
 
-    def send_dm_notification(
-        self, user_id: str, channel_name: str, thread_ts: str, topic: str,
-        preview: str = "", author_name: str = ""
-    ) -> bool:
-        """Legacy DM method — now wraps send_channel_notification for backward compat."""
-        return self.send_channel_notification(
-            target_channel=user_id,
-            source_channel_name=channel_name,
-            thread_ts=thread_ts,
-            topic=topic,
-            preview=preview,
-            author_name=author_name,
-        )
-
-    def _find_vicsherlock_channel(self) -> Optional[str]:
-        """Find the #vicsherlock channel ID."""
-        try:
-            response = self.slack_client.conversations_list(
-                limit=200, exclude_archived=True, types="public_channel,private_channel"
-            )
-            for ch in response.get("channels", []):
-                if ch["name"] == "vicsherlock":
-                    return ch["id"]
-        except SlackApiError as e:
-            logger.error(f"Error finding #vicsherlock channel: {e}")
-        return None
-
     def notify_documentation_worthy_threads(
-        self, documentation_worthy: list
+        self, documentation_worthy: list, notify_user_id: str = None
     ) -> dict:
         """
-        Post notifications to #vicsherlock channel for all documentation-worthy threads found.
+        DM a specific user about all documentation-worthy threads found.
 
         Args:
             documentation_worthy: List of documentation-worthy thread entries
+            notify_user_id: Slack user ID to DM (defaults to NOTIFY_USER_ID env var)
 
         Returns:
             Dictionary with notification results
@@ -373,13 +335,8 @@ Format: YES/NO | Explanation | Title"""
             "skipped": 0,
         }
 
-        # Find #vicsherlock channel
-        target_channel = self._find_vicsherlock_channel()
-        if not target_channel:
-            logger.error("Could not find #vicsherlock channel — falling back to scanning user DMs")
-            # If no channel found, we can't notify
-            results["errors"] = ["#vicsherlock channel not found"]
-            return results
+        # Who to DM — defaults to Aftab
+        target_user = notify_user_id or os.getenv("NOTIFY_USER_ID", "U09J7FWMEKZ")
 
         for entry in documentation_worthy:
             try:
@@ -396,9 +353,9 @@ Format: YES/NO | Explanation | Title"""
                     except Exception:
                         pass
 
-                success = self.send_channel_notification(
-                    target_channel=target_channel,
-                    source_channel_name=entry["channel_name"],
+                success = self.send_dm_notification(
+                    user_id=target_user,
+                    channel_name=entry["channel_name"],
                     thread_ts=entry["thread_ts"],
                     topic=entry.get("topic", "Documentation-worthy conversation"),
                     preview=entry.get("preview", ""),
