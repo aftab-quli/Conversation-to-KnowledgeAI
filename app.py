@@ -473,13 +473,40 @@ def slack_events():
         event = data.get("event", {})
         event_type = event.get("type", "")
 
-        logger.info(f"Received Slack event: {event_type}")
+        logger.info(f"Received Slack event: {event_type} | Full event: {event}")
 
-        # Handle DM messages
+        # Handle assistant_thread_started (from Agents & AI Apps feature)
+        if event_type == "assistant_thread_started":
+            thread_context = event.get("assistant_thread", {})
+            channel = thread_context.get("channel_id", "")
+            thread_ts = thread_context.get("thread_ts", "")
+            if channel:
+                try:
+                    from slack_sdk import WebClient
+                    slack = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
+                    slack.chat_postMessage(
+                        channel=channel,
+                        thread_ts=thread_ts,
+                        text=(
+                            ":mag: *VicSherlock — Ready to investigate!*\n\n"
+                            "I scan Slack channels for documentation-worthy conversations and help keep your team's knowledge up to date.\n\n"
+                            "Try asking me:\n"
+                            "• _\"What have you found recently?\"_\n"
+                            "• _\"What did Katie Roy say about VicPay?\"_\n"
+                            "• _\"Scan channels for updates\"_"
+                        ),
+                        mrkdwn=True
+                    )
+                except Exception as e:
+                    logger.error(f"Error handling assistant_thread_started: {e}")
+            return jsonify({"ok": True}), 200
+
+        # Handle DM messages (both regular and threaded from Agents mode)
         if event_type == "message" and not event.get("bot_id") and not event.get("subtype"):
             user_text = event.get("text", "").strip()
             channel = event.get("channel", "")
             user_id = event.get("user", "")
+            thread_ts = event.get("thread_ts", None)  # For Agents & AI Apps threaded mode
 
             # Handle "new chat" / "start fresh" commands
             if user_text and user_text.lower() in ("new chat", "start fresh", "clear", "reset"):
@@ -507,8 +534,30 @@ def slack_events():
                 return jsonify({"ok": True}), 200
 
             if user_text and channel:
+                # Send a fun "thinking" message immediately
+                import random
+                thinking_messages = [
+                    ":mag: _The game is afoot! Deducing your answer..._",
+                    ":smoking: _Elementary... give me a moment to consult my mind palace._",
+                    ":male-detective: _Sherlock is on the case. One moment..._",
+                    ":mag_right: _Investigating the evidence... this won't take long._",
+                    ":brain: _Retreating to my mind palace. Back in a flash..._",
+                    ":memo: _Ah, an interesting query! Let me examine the clues..._",
+                    ":sleuth_or_spy: _No mystery too great, no doc too small. Thinking..._",
+                ]
+                try:
+                    from slack_sdk import WebClient as _WC
+                    _thinking_slack = _WC(token=os.getenv("SLACK_BOT_TOKEN"))
+                    thinking_kwargs = {"channel": channel, "text": random.choice(thinking_messages), "mrkdwn": True}
+                    if thread_ts:
+                        thinking_kwargs["thread_ts"] = thread_ts
+                    thinking_msg = _thinking_slack.chat_postMessage(**thinking_kwargs)
+                    thinking_ts = thinking_msg.get("ts")
+                except Exception:
+                    thinking_ts = None
+
                 # Process in background thread so we respond to Slack within 3s
-                def reply_with_claude(msg_text=user_text, msg_channel=channel, msg_user=user_id):
+                def reply_with_claude(msg_text=user_text, msg_channel=channel, msg_user=user_id, _thinking_ts=thinking_ts, _thread_ts=thread_ts):
                     try:
                         anthropic_key = os.getenv("ANTHROPIC_API_KEY")
                         slack_token = os.getenv("SLACK_BOT_TOKEN")
@@ -553,7 +602,18 @@ Be friendly, concise, and helpful. Use emoji sparingly.""",
                             messages=[{"role": "user", "content": msg_text}],
                         )
                         reply = response.content[0].text
-                        slack.chat_postMessage(channel=msg_channel, text=reply)
+
+                        # Delete the thinking message and send the real reply
+                        if _thinking_ts:
+                            try:
+                                slack.chat_delete(channel=msg_channel, ts=_thinking_ts)
+                            except Exception:
+                                pass  # If we can't delete it, no big deal
+
+                        reply_kwargs = {"channel": msg_channel, "text": reply}
+                        if _thread_ts:
+                            reply_kwargs["thread_ts"] = _thread_ts
+                        slack.chat_postMessage(**reply_kwargs)
                         logger.info(f"Replied to {msg_user} in {msg_channel}")
 
                     except Exception as e:
@@ -561,7 +621,10 @@ Be friendly, concise, and helpful. Use emoji sparingly.""",
                         try:
                             from slack_sdk import WebClient
                             slack = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
-                            slack.chat_postMessage(channel=msg_channel, text="Oops, I hit a snag processing that. Try again in a moment!")
+                            err_kwargs = {"channel": msg_channel, "text": "Oops, I hit a snag processing that. Try again in a moment!"}
+                            if _thread_ts:
+                                err_kwargs["thread_ts"] = _thread_ts
+                            slack.chat_postMessage(**err_kwargs)
                         except Exception:
                             pass
 
