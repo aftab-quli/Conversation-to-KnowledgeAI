@@ -15,7 +15,6 @@ import shutil
 import threading
 import uuid
 import logging
-import time
 from datetime import datetime
 from pathlib import Path
 
@@ -458,11 +457,10 @@ def slack_events():
             user_text = event.get("text", "").strip()
             channel = event.get("channel", "")
             user_id = event.get("user", "")
-            files = event.get("files", [])
 
-            if (user_text or files) and channel:
+            if user_text and channel:
                 # Process in background thread so we respond to Slack within 3s
-                def reply_with_claude(msg_text=user_text, msg_files=files, msg_channel=channel, msg_user=user_id):
+                def reply_with_claude(msg_text=user_text, msg_channel=channel, msg_user=user_id):
                     try:
                         anthropic_key = os.getenv("ANTHROPIC_API_KEY")
                         slack_token = os.getenv("SLACK_BOT_TOKEN")
@@ -472,40 +470,14 @@ def slack_events():
 
                         from anthropic import Anthropic as AnthropicClient
                         from slack_sdk import WebClient
-                        import requests as req
 
                         client = AnthropicClient(api_key=anthropic_key)
                         slack = WebClient(token=slack_token)
 
-                        # Check if user attached a PDF file
-                        pdf_text = None
-                        pdf_filename = None
-                        for f in msg_files:
-                            if f.get("filetype") == "pdf" or (f.get("name", "").lower().endswith(".pdf")):
-                                pdf_filename = f.get("name", "document.pdf")
-                                pdf_url = f.get("url_private_download") or f.get("url_private")
-                                if pdf_url:
-                                    logger.info(f"Downloading PDF attachment: {pdf_filename}")
-                                    headers = {"Authorization": f"Bearer {slack_token}"}
-                                    resp = req.get(pdf_url, headers=headers)
-                                    if resp.status_code == 200:
-                                        # Extract text from PDF
-                                        try:
-                                            import io
-                                            from PyPDF2 import PdfReader
-                                            reader = PdfReader(io.BytesIO(resp.content))
-                                            pages = []
-                                            for page in reader.pages:
-                                                text = page.extract_text()
-                                                if text:
-                                                    pages.append(text)
-                                            pdf_text = "\n\n".join(pages)
-                                            logger.info(f"Extracted {len(pages)} pages from PDF ({len(pdf_text)} chars)")
-                                        except Exception as e:
-                                            logger.error(f"PDF extraction error: {e}")
-                                break  # Only process first PDF
-
-                        vic_system_prompt = """You are VicSherlock, a Conversation-to-Knowledge AI bot for Vic.ai.
+                        response = client.messages.create(
+                            model="claude-sonnet-4-20250514",
+                            max_tokens=1024,
+                            system="""You are VicSherlock, a Conversation-to-Knowledge AI bot for Vic.ai.
 Your job is to monitor Slack conversations for documentation-worthy content and help keep team knowledge up to date.
 
 You actively scan Slack channels for tutorials, process changes, troubleshooting threads, and other documentation-worthy conversations, then alert the right people to update docs.
@@ -529,109 +501,11 @@ RECENT FINDINGS FROM YOUR CHANNEL SCANS:
 When users ask about recent findings or Katie Roy's messages, share these details.
 When users ask you to update documentation or Guru cards, acknowledge the request and explain what steps are needed.
 
-Be friendly, concise, and helpful. Use emoji sparingly."""
-
-                        # If a PDF was attached, build a doc-update flow
-                        if pdf_text and msg_text:
-                            # Tell user we're working on it
-                            slack.chat_postMessage(
-                                channel=msg_channel,
-                                text="Got it! I'm reading the document and updating it with the latest findings. Give me a moment..."
-                            )
-
-                            # Ask Claude to produce the updated document content
-                            update_response = client.messages.create(
-                                model="claude-sonnet-4-20250514",
-                                max_tokens=4096,
-                                system=vic_system_prompt + """
-
-IMPORTANT: The user has shared a document and wants you to update it.
-You have the full text of the document below. Apply the relevant changes based on your recent findings from channel scans.
-Return the FULL updated document text with all changes incorporated.
-Mark any new or changed sections with [UPDATED] at the start of the line so changes are easy to spot.
-Keep the existing structure and formatting. Only modify sections that need updating based on your findings.""",
-                                messages=[{"role": "user", "content": f"Here is the document '{pdf_filename}':\n\n{pdf_text}\n\nUser request: {msg_text}"}],
-                            )
-                            updated_content = update_response.content[0].text
-
-                            # Generate a .docx with the updated content
-                            try:
-                                from docx import Document
-                                from docx.shared import Pt, Inches
-                                import tempfile
-
-                                doc = Document()
-                                doc.core_properties.author = "VicSherlock"
-
-                                # Parse the updated content into the docx
-                                lines = updated_content.split("\n")
-                                for line in lines:
-                                    stripped = line.strip()
-                                    if not stripped:
-                                        continue
-                                    if stripped.startswith("# "):
-                                        doc.add_heading(stripped[2:], level=1)
-                                    elif stripped.startswith("## "):
-                                        doc.add_heading(stripped[3:], level=2)
-                                    elif stripped.startswith("### "):
-                                        doc.add_heading(stripped[4:], level=3)
-                                    elif stripped.startswith("- ") or stripped.startswith("* "):
-                                        doc.add_paragraph(stripped[2:], style="List Bullet")
-                                    elif stripped.startswith("[UPDATED]"):
-                                        p = doc.add_paragraph()
-                                        run = p.add_run(stripped)
-                                        run.bold = True
-                                    else:
-                                        doc.add_paragraph(stripped)
-
-                                # Save to temp file
-                                base_name = pdf_filename.rsplit(".", 1)[0] if "." in pdf_filename else pdf_filename
-                                output_name = f"{base_name} - Updated by VicSherlock.docx"
-                                tmp_path = os.path.join(tempfile.gettempdir(), output_name)
-                                doc.save(tmp_path)
-
-                                # Upload to Slack
-                                slack.files_upload_v2(
-                                    channel=msg_channel,
-                                    file=tmp_path,
-                                    filename=output_name,
-                                    title=output_name,
-                                    initial_comment="Here's the updated document with the latest changes incorporated. Sections marked [UPDATED] show where I made changes based on Katie Roy's process update."
-                                )
-                                logger.info(f"Uploaded updated doc to {msg_channel}")
-
-                                # Clean up
-                                os.remove(tmp_path)
-
-                            except Exception as e:
-                                logger.error(f"Error generating docx: {e}")
-                                # Fall back to sending the text
-                                # Truncate if too long for Slack (4000 char limit)
-                                if len(updated_content) > 3900:
-                                    slack.chat_postMessage(
-                                        channel=msg_channel,
-                                        text="I updated the document but couldn't generate a .docx file. Here are the key changes:\n\n" + updated_content[:3900] + "\n\n_(truncated — full doc was too long for a message)_"
-                                    )
-                                else:
-                                    slack.chat_postMessage(
-                                        channel=msg_channel,
-                                        text="Here's the updated document content:\n\n" + updated_content
-                                    )
-                        else:
-                            # Normal text-only conversation
-                            user_content = msg_text or "Hello"
-                            if pdf_text:
-                                user_content = f"[User shared a PDF: {pdf_filename}]\n\nDocument content:\n{pdf_text[:3000]}\n\n{msg_text or 'What can you tell me about this document?'}"
-
-                            response = client.messages.create(
-                                model="claude-sonnet-4-20250514",
-                                max_tokens=1024,
-                                system=vic_system_prompt,
-                                messages=[{"role": "user", "content": user_content}],
-                            )
-                            reply = response.content[0].text
-                            slack.chat_postMessage(channel=msg_channel, text=reply)
-
+Be friendly, concise, and helpful. Use emoji sparingly.""",
+                            messages=[{"role": "user", "content": msg_text}],
+                        )
+                        reply = response.content[0].text
+                        slack.chat_postMessage(channel=msg_channel, text=reply)
                         logger.info(f"Replied to {msg_user} in {msg_channel}")
 
                     except Exception as e:
