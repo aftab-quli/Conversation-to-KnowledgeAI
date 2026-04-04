@@ -213,6 +213,15 @@
     let selectedFile = null;
     let currentJobId = null;
     let pollInterval = null;
+    let pollRetries = 0;
+    const MAX_POLL_RETRIES = 3;
+    const MAX_POLL_TIME = 120000; // 2 min timeout
+    let pollStartTime = null;
+
+    // Clear any stale state on page load
+    document.getElementById('errorBox').style.display = 'none';
+    document.getElementById('progressSection').style.display = 'none';
+    document.getElementById('resultsSection').style.display = 'none';
 
     const dropZone = document.getElementById('dropZone');
     const videoInput = document.getElementById('videoInput');
@@ -256,9 +265,14 @@
 
     async function generate() {
       const instructions = document.getElementById('instructions').value.trim();
-      if (!instructions) { alert('Please provide instructions for the guide.'); return; }
+      if (!instructions) { showError('Please provide instructions for the guide.'); return; }
 
       const transcript = document.getElementById('transcript').value.trim();
+
+      // Kill any stale polling from previous attempts
+      if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+      pollRetries = 0;
+      pollStartTime = Date.now();
 
       // Reset UI
       document.getElementById('errorBox').style.display = 'none';
@@ -307,33 +321,49 @@
           showError('Could not connect to server.');
         }
       } else {
-        alert('Please upload a video or paste a transcript.');
-        document.getElementById('progressSection').style.display = 'none';
-        document.getElementById('generateBtn').disabled = false;
+        showError('Please upload a video or paste a transcript.');
+        return;
       }
     }
 
     async function pollStatus() {
       if (!currentJobId) return;
+
+      // Timeout after 2 minutes
+      if (pollStartTime && (Date.now() - pollStartTime > MAX_POLL_TIME)) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+        showError('Request timed out. Please try again.');
+        return;
+      }
+
       try {
         const res = await fetch('/status/' + currentJobId);
         const job = await res.json();
+        pollRetries = 0; // Reset retries on success
         const progress = job.progress || 0;
         document.getElementById('progressBar').style.width = progress + '%';
         document.getElementById('stepText').textContent = job.step || 'Working...';
 
         if (job.status === 'done') {
           clearInterval(pollInterval);
+          pollInterval = null;
           document.getElementById('progressBar').style.width = '100%';
           showResults(job);
           document.getElementById('generateBtn').disabled = false;
         } else if (job.status === 'error') {
           clearInterval(pollInterval);
+          pollInterval = null;
           showError(job.error || 'Something went wrong.');
         }
       } catch (e) {
-        clearInterval(pollInterval);
-        showError('Lost connection to server.');
+        pollRetries++;
+        if (pollRetries >= MAX_POLL_RETRIES) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+          showError('Lost connection to server. Please refresh and try again.');
+        }
+        // Otherwise silently retry on next poll
       }
     }
 
