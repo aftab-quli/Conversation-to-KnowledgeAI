@@ -51,129 +51,11 @@ try:
 except ImportError:
     create_slack_bot_scanner = None
 
-# Slack Bolt for interactive messaging
-try:
-    from slack_bolt import App as SlackBoltApp
-    from slack_bolt.adapter.flask import SlackRequestHandler
-    from slack_sdk import WebClient
-    from anthropic import Anthropic as AnthropicClient
-    BOLT_AVAILABLE = True
-except ImportError:
-    BOLT_AVAILABLE = False
-
+# No Bolt — we handle all Slack events directly via Flask for full control
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-
-# --- Slack Bolt Setup (for receiving DMs / interactive messages) ---
-slack_bolt_app = None
-slack_handler = None
-
-if BOLT_AVAILABLE:
-    slack_token = os.getenv("SLACK_BOT_TOKEN")
-    slack_signing_secret = os.getenv("SLACK_SIGNING_SECRET")
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-
-    if slack_token and slack_signing_secret:
-        try:
-            slack_bolt_app = SlackBoltApp(
-                token=slack_token,
-                signing_secret=slack_signing_secret,
-            )
-            slack_handler = SlackRequestHandler(slack_bolt_app)
-            logger.info("Slack Bolt app initialized — ready to receive messages")
-
-            # Handle incoming DMs
-            @slack_bolt_app.event("message")
-            def handle_message_events(body, say, client, event):
-                """Respond to DMs sent to VicSherlock."""
-                # Ignore bot's own messages
-                if event.get("bot_id") or event.get("subtype"):
-                    return
-
-                user_id = event.get("user", "")
-                user_text = event.get("text", "").strip()
-                channel = event.get("channel", "")
-
-                if not user_text:
-                    return
-
-                logger.info(f"Received message from {user_id}: {user_text[:100]}")
-
-                try:
-                    # Use Claude to generate a helpful response
-                    if anthropic_key:
-                        anthropic_client = AnthropicClient(api_key=anthropic_key)
-                        response = anthropic_client.messages.create(
-                            model="claude-sonnet-4-20250514",
-                            max_tokens=1024,
-                            system="""You are VicSherlock, a Conversation-to-Knowledge AI bot for Vic.ai.
-Your job is to monitor Slack conversations for documentation-worthy content and help keep team knowledge up to date.
-
-When users ask you to update documentation or Guru cards, acknowledge the request and explain what you'll do.
-When users ask how you work, explain that you scan Slack channels for tutorials, process changes, troubleshooting threads, and other documentation-worthy conversations, then alert the right people to update docs.
-
-Be friendly, concise, and helpful. Use emoji sparingly.""",
-                            messages=[{"role": "user", "content": user_text}],
-                        )
-                        reply = response.content[0].text
-                    else:
-                        reply = "Hey! I'm VicSherlock. I scan Slack for documentation-worthy conversations. I can't process your request right now, but I'm here to help!"
-
-                    say(text=reply)
-                    logger.info(f"Replied to {user_id} in {channel}")
-
-                except Exception as e:
-                    logger.error(f"Error responding to message: {e}")
-                    say(text="Oops, I hit a snag processing that. Try again in a moment!")
-
-            # Handle app_home_opened event (optional)
-            @slack_bolt_app.event("app_home_opened")
-            def handle_app_home(event, client):
-                """Update the App Home tab when a user opens it."""
-                try:
-                    client.views_publish(
-                        user_id=event["user"],
-                        view={
-                            "type": "home",
-                            "blocks": [
-                                {
-                                    "type": "header",
-                                    "text": {"type": "plain_text", "text": "VicSherlock"}
-                                },
-                                {
-                                    "type": "section",
-                                    "text": {
-                                        "type": "mrkdwn",
-                                        "text": "*Your Conversation-to-Knowledge AI Agent*\n\nI scan Slack channels for documentation-worthy conversations — tutorials, process changes, troubleshooting threads — and alert you when it's time to update your docs."
-                                    }
-                                },
-                                {"type": "divider"},
-                                {
-                                    "type": "section",
-                                    "text": {
-                                        "type": "mrkdwn",
-                                        "text": "*What I can do:*\n• Scan channels for knowledge worth capturing\n• Alert you when Guru cards need updating\n• Convert video recordings into step-by-step guides\n• Help keep your team's documentation current"
-                                    }
-                                },
-                                {
-                                    "type": "section",
-                                    "text": {
-                                        "type": "mrkdwn",
-                                        "text": "Send me a message to get started!"
-                                    }
-                                },
-                            ]
-                        }
-                    )
-                except Exception as e:
-                    logger.error(f"Error publishing home tab: {e}")
-
-        except Exception as e:
-            logger.error(f"Failed to initialize Slack Bolt: {e}")
-            slack_bolt_app = None
-            slack_handler = None
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500MB max upload
 
 # Directories
@@ -458,13 +340,17 @@ def scan_status(job_id):
     })
 
 
-# --- Slack Events Endpoint (for Bolt to receive messages) ---
+# --- Slack Events Endpoint ---
 @app.route("/slack/events", methods=["POST"])
 def slack_events():
-    """Handle Slack events directly (no Bolt signature check for demo)."""
+    """Handle ALL Slack events directly — single handler for everything."""
+    logger.info(">>> /slack/events HIT <<<")
     data = request.get_json(silent=True)
     if not data:
+        logger.warning("No JSON data in request")
         return jsonify({"error": "no data"}), 400
+
+    logger.info(f"Event payload type: {data.get('type')} | keys: {list(data.keys())}")
 
     # Handle Slack URL verification challenge
     if data.get("type") == "url_verification":
