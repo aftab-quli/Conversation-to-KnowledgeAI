@@ -623,8 +623,8 @@ def trigger_scan():
     return jsonify({"status": "scan_started", "message": "Channel scan triggered — findings will be DM'd to you"}), 200
 
 
-@app.route("/scan-status", methods=["GET"])
-def scan_status():
+@app.route("/scanner-status", methods=["GET"])
+def scanner_status():
     """Get the last scan results."""
     with _scan_lock:
         if _last_scan_results:
