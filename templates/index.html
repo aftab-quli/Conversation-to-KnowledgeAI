@@ -274,6 +274,9 @@
       pollRetries = 0;
       pollStartTime = Date.now();
 
+      // Wake up server if it's sleeping (Render free tier spins down)
+      try { await fetch('/scanner-status'); } catch(e) {}
+
       // Reset UI
       document.getElementById('errorBox').style.display = 'none';
       document.getElementById('resultsSection').style.display = 'none';
