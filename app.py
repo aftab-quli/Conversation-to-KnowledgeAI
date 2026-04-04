@@ -761,6 +761,56 @@ def debug_events():
     return jsonify({"recent_events": _recent_events, "count": len(_recent_events)})
 
 
+@app.route("/debug-gong")
+def debug_gong():
+    """Test Gong API connection and show diagnostics."""
+    if not get_gong_findings:
+        return jsonify({"error": "gong_client module not imported", "hint": "Check if gong_client.py exists"})
+
+    from gong_client import GongClient
+    client = GongClient()
+
+    diag = {
+        "is_configured": client.is_configured,
+        "access_key_set": bool(client.access_key),
+        "access_key_preview": client.access_key[:4] + "..." if client.access_key else "(empty)",
+        "secret_set": bool(client.access_key_secret),
+        "base_url": client.base_url,
+        "env_base_url": os.getenv("GONG_BASE_URL", "(not set)"),
+    }
+
+    if client.is_configured:
+        import requests as _req
+        try:
+            # Try a simple API call to test auth
+            resp = _req.post(
+                f"{client.base_url}/calls/extensive",
+                auth=client._auth(),
+                json={
+                    "filter": {
+                        "fromDateTime": "2026-01-01T00:00:00Z",
+                        "toDateTime": "2026-04-05T00:00:00Z",
+                    },
+                    "contentSelector": {"exposedFields": {"parties": True}}
+                },
+                timeout=15,
+            )
+            diag["api_status_code"] = resp.status_code
+            diag["api_response_preview"] = str(resp.text[:500])
+            if resp.status_code == 200:
+                data = resp.json()
+                diag["calls_found"] = len(data.get("calls", []))
+                diag["has_more"] = data.get("records", {}).get("cursor") is not None
+            else:
+                diag["api_error"] = resp.text[:300]
+        except Exception as e:
+            diag["connection_error"] = str(e)
+    else:
+        diag["hint"] = "Set GONG_ACCESS_KEY and GONG_ACCESS_KEY_SECRET env vars. These are API keys from Gong Settings > API, NOT your login username/password."
+
+    return jsonify(diag)
+
+
 @app.route("/send-finding", methods=["POST", "GET"])
 def send_finding():
     """Send a test finding message as VicSherlock bot to the DM channel."""

@@ -31,7 +31,7 @@ class GongClient:
     def _auth(self):
         return (self.access_key, self.access_key_secret)
 
-    def get_recent_calls(self, days=7, limit=20):
+    def get_recent_calls(self, days=30, limit=20):
         """Fetch recent calls from the last N days."""
         if not self.is_configured:
             return []
@@ -106,7 +106,7 @@ class GongClient:
             logger.error(f"Gong API error (transcripts): {e}")
             return {}
 
-    def get_recent_call_summaries(self, days=7, limit=10):
+    def get_recent_call_summaries(self, days=30, limit=10):
         """Get a summary of recent calls with participant info and topics — lightweight."""
         calls = self.get_recent_calls(days=days, limit=limit)
         if not calls:
@@ -152,11 +152,11 @@ def get_gong_findings():
         return ""
 
     try:
-        summaries = client.get_recent_call_summaries(days=7, limit=10)
+        summaries = client.get_recent_call_summaries(days=30, limit=10)
         if not summaries:
-            return "GONG CALLS: No recent calls found in the last 7 days."
+            return "GONG CALLS: No recent calls found in the last 30 days."
 
-        lines = ["RECENT GONG CALLS (last 7 days):\n"]
+        lines = ["RECENT GONG CALLS (last 30 days):\n"]
         for s in summaries:
             lines.append(f"Call: {s['title']} ({s['date']}, {s['duration_min']} min)")
             if s['participants']:
