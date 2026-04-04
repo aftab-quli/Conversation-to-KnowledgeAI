@@ -24,12 +24,27 @@ from werkzeug.utils import secure_filename
 
 load_dotenv()
 
-from video_processor import extract_audio, detect_scene_changes, extract_frames_at_timestamps, get_video_duration
-from frame_analyzer import process_all_frames, filter_duplicate_frames
-from guide_generator import GuideGenerator
-from doc_builder import generate_guide_document
+# Lazy imports — these modules pull in heavy deps (opencv, faster-whisper, numpy)
+# Only import them when actually processing a video to stay under 512MB on Render free tier
+video_processor = None
+frame_analyzer = None
+guide_generator = None
+doc_builder = None
+transcriber = None
 
-from transcriber import transcribe_audio, format_transcript_with_timestamps
+def _lazy_import_video_modules():
+    global video_processor, frame_analyzer, guide_generator, doc_builder, transcriber
+    if video_processor is None:
+        import video_processor as _vp
+        import frame_analyzer as _fa
+        import guide_generator as _gg
+        import doc_builder as _db
+        import transcriber as _tr
+        video_processor = _vp
+        frame_analyzer = _fa
+        guide_generator = _gg
+        doc_builder = _db
+        transcriber = _tr
 
 try:
     from slack_bot import create_slack_bot_scanner
@@ -185,6 +200,14 @@ def run_video_job(job_id: str, video_path: str, instructions: str, doc_type: str
     If transcript is provided, skip audio extraction and transcription.
     If transcript is None, extract audio and transcribe locally using faster-whisper.
     """
+    # Lazy-load heavy modules only when actually processing video
+    _lazy_import_video_modules()
+    from video_processor import extract_audio, detect_scene_changes, extract_frames_at_timestamps, get_video_duration
+    from frame_analyzer import process_all_frames, filter_duplicate_frames
+    from guide_generator import GuideGenerator
+    from doc_builder import generate_guide_document
+    from transcriber import transcribe_audio, format_transcript_with_timestamps
+
     job = jobs[job_id]
     job_temp = TEMP_DIR / job_id
     job_temp.mkdir(parents=True, exist_ok=True)
