@@ -255,7 +255,7 @@ Respond with:
 Format: YES/NO | Explanation | Title"""
 
             response = self.anthropic_client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-sonnet-4-20250514",
                 max_tokens=300,
                 messages=[{"role": "user", "content": prompt}],
             )
@@ -279,52 +279,86 @@ Format: YES/NO | Explanation | Title"""
             logger.error(f"Error analyzing thread with Claude: {e}")
             return False
 
-    def send_dm_notification(
-        self, user_id: str, channel_name: str, thread_ts: str, topic: str
+    def send_channel_notification(
+        self, target_channel: str, source_channel_name: str, thread_ts: str, topic: str,
+        preview: str = "", author_name: str = ""
     ) -> bool:
         """
-        Send a DM to a user about a documentation-worthy thread.
+        Post a notification to the #vicsherlock channel about a documentation-worthy thread.
 
         Args:
-            user_id: Slack user ID to DM
-            channel_name: Name of channel where thread was found
-            thread_ts: Thread timestamp for creating thread link
+            target_channel: Channel ID or name to post to (e.g. #vicsherlock)
+            source_channel_name: Name of channel where thread was found
+            thread_ts: Thread timestamp
             topic: Topic/title of the documentation
+            preview: Short preview of the conversation
+            author_name: Name of the person who posted
 
         Returns:
-            True if DM sent successfully
+            True if message sent successfully
         """
         try:
-            # Format thread link
-            thread_link = f"slack://channel?team=*&id={channel_name}&message_ts={thread_ts}"
-            thread_text = f"View conversation in #{channel_name}"
+            author_line = f" by *{author_name}*" if author_name else ""
 
-            message = f"""Hey there! I found a conversation in #{channel_name} that looks worth documenting:
-
-*{topic}*
-
-This could make a great step-by-step guide, troubleshooting doc, or process guide that could help your team.
-
-Would you like me to create a formatted guide from this conversation? Just reply or react if you're interested!
-
-{thread_text}"""
-
-            response = self.slack_client.chat_postMessage(
-                channel=user_id, text=message, mrkdwn=True
+            message = (
+                f":mag: *New finding in #{source_channel_name}*{author_line}\n\n"
+                f"*{topic}*\n\n"
             )
 
-            logger.info(f"DM sent to {user_id} about thread {thread_ts}")
+            if preview:
+                snippet = preview[:300] + ("..." if len(preview) > 300 else "")
+                message += f"> {snippet}\n\n"
+
+            message += (
+                "Would you like me to:\n"
+                "• *Create a new doc* from this conversation?\n"
+                "• *Update an existing doc* — just send me the current doc and I'll revise it!\n\n"
+                "_Reply in this thread to let me know!_"
+            )
+
+            response = self.slack_client.chat_postMessage(
+                channel=target_channel, text=message, mrkdwn=True
+            )
+
+            logger.info(f"Notification posted to {target_channel} about thread in #{source_channel_name}")
             return True
 
         except SlackApiError as e:
-            logger.error(f"Error sending DM to {user_id}: {e}")
+            logger.error(f"Error posting to {target_channel}: {e}")
             return False
+
+    def send_dm_notification(
+        self, user_id: str, channel_name: str, thread_ts: str, topic: str,
+        preview: str = "", author_name: str = ""
+    ) -> bool:
+        """Legacy DM method — now wraps send_channel_notification for backward compat."""
+        return self.send_channel_notification(
+            target_channel=user_id,
+            source_channel_name=channel_name,
+            thread_ts=thread_ts,
+            topic=topic,
+            preview=preview,
+            author_name=author_name,
+        )
+
+    def _find_vicsherlock_channel(self) -> Optional[str]:
+        """Find the #vicsherlock channel ID."""
+        try:
+            response = self.slack_client.conversations_list(
+                limit=200, exclude_archived=True, types="public_channel,private_channel"
+            )
+            for ch in response.get("channels", []):
+                if ch["name"] == "vicsherlock":
+                    return ch["id"]
+        except SlackApiError as e:
+            logger.error(f"Error finding #vicsherlock channel: {e}")
+        return None
 
     def notify_documentation_worthy_threads(
         self, documentation_worthy: list
     ) -> dict:
         """
-        Send DM notifications for all documentation-worthy threads found.
+        Post notifications to #vicsherlock channel for all documentation-worthy threads found.
 
         Args:
             documentation_worthy: List of documentation-worthy thread entries
@@ -339,19 +373,36 @@ Would you like me to create a formatted guide from this conversation? Just reply
             "skipped": 0,
         }
 
+        # Find #vicsherlock channel
+        target_channel = self._find_vicsherlock_channel()
+        if not target_channel:
+            logger.error("Could not find #vicsherlock channel — falling back to scanning user DMs")
+            # If no channel found, we can't notify
+            results["errors"] = ["#vicsherlock channel not found"]
+            return results
+
         for entry in documentation_worthy:
             try:
-                # Don't spam the same user multiple times - limit to 3 per scan
-                user_id = entry["user_id"]
-                if results["sent"] > 10:  # Safety limit
+                if results["sent"] >= 10:  # Safety limit per scan
                     results["skipped"] += 1
                     continue
 
-                success = self.send_dm_notification(
-                    user_id=user_id,
-                    channel_name=entry["channel_name"],
+                # Look up author name
+                author_name = entry.get("user_name", "")
+                if not author_name and entry.get("user_id"):
+                    try:
+                        user_info = self.slack_client.users_info(user=entry["user_id"])
+                        author_name = user_info["user"].get("real_name", user_info["user"].get("name", ""))
+                    except Exception:
+                        pass
+
+                success = self.send_channel_notification(
+                    target_channel=target_channel,
+                    source_channel_name=entry["channel_name"],
                     thread_ts=entry["thread_ts"],
-                    topic=entry["topic"],
+                    topic=entry.get("topic", "Documentation-worthy conversation"),
+                    preview=entry.get("preview", ""),
+                    author_name=author_name,
                 )
 
                 if success:
@@ -360,7 +411,7 @@ Would you like me to create a formatted guide from this conversation? Just reply
                     results["failed"] += 1
 
             except Exception as e:
-                logger.error(f"Error notifying user {entry.get('user_id')}: {e}")
+                logger.error(f"Error notifying about thread: {e}")
                 results["failed"] += 1
 
         return results

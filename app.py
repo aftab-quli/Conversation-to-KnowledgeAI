@@ -15,6 +15,7 @@ import shutil
 import threading
 import uuid
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -671,6 +672,100 @@ Keep the existing structure and formatting. Only modify sections that need updat
         return jsonify({"ok": True}), 200
 
     return jsonify({"ok": True}), 200
+
+
+# --- Background Channel Scanner ---
+# Periodically scans Slack channels and posts findings to #vicsherlock
+
+SCAN_INTERVAL_SECONDS = int(os.getenv("SCAN_INTERVAL", "1800"))  # Default: every 30 minutes
+_scanner_thread = None
+_last_scan_results = None
+_scan_lock = threading.Lock()
+
+
+def run_channel_scan():
+    """Execute a single channel scan and post findings to #vicsherlock."""
+    global _last_scan_results
+    try:
+        if create_slack_bot_scanner is None:
+            logger.warning("slack_bot module not available — skipping scan")
+            return None
+
+        scanner = create_slack_bot_scanner()
+        if scanner is None:
+            logger.warning("Could not create scanner (missing tokens) — skipping scan")
+            return None
+
+        logger.info("Starting scheduled channel scan...")
+        results = scanner.perform_full_scan_and_notify(limit_channels=20)
+
+        with _scan_lock:
+            _last_scan_results = {
+                "timestamp": datetime.now().isoformat(),
+                "results": results,
+            }
+
+        logger.info(
+            f"Scan complete: {results.get('channels_scanned', 0)} channels scanned, "
+            f"{len(results.get('documentation_worthy', []))} findings, "
+            f"{results.get('notifications', {}).get('sent', 0)} notifications posted to #vicsherlock"
+        )
+        return results
+
+    except Exception as e:
+        logger.error(f"Channel scan failed: {e}")
+        return None
+
+
+def background_scanner_loop():
+    """Background loop that runs channel scans on an interval."""
+    # Wait 30 seconds after startup before first scan (let the app warm up)
+    time.sleep(30)
+    logger.info(f"Background scanner started — scanning every {SCAN_INTERVAL_SECONDS}s")
+
+    while True:
+        try:
+            run_channel_scan()
+        except Exception as e:
+            logger.error(f"Background scanner error: {e}")
+
+        time.sleep(SCAN_INTERVAL_SECONDS)
+
+
+def start_background_scanner():
+    """Start the background scanner thread if not already running."""
+    global _scanner_thread
+    if _scanner_thread is not None and _scanner_thread.is_alive():
+        return
+
+    _scanner_thread = threading.Thread(target=background_scanner_loop, daemon=True)
+    _scanner_thread.start()
+    logger.info("Background channel scanner thread launched")
+
+
+@app.route("/scan-now", methods=["POST"])
+def trigger_scan():
+    """Manually trigger a channel scan (POST /scan-now)."""
+    def do_scan():
+        run_channel_scan()
+
+    thread = threading.Thread(target=do_scan, daemon=True)
+    thread.start()
+    return jsonify({"status": "scan_started", "message": "Channel scan triggered — results will be posted to #vicsherlock"}), 200
+
+
+@app.route("/scan-status", methods=["GET"])
+def scan_status():
+    """Get the last scan results."""
+    with _scan_lock:
+        if _last_scan_results:
+            return jsonify(_last_scan_results), 200
+        else:
+            return jsonify({"status": "no_scans_yet"}), 200
+
+
+# Start the background scanner when the app loads
+start_background_scanner()
 
 
 if __name__ == "__main__":
