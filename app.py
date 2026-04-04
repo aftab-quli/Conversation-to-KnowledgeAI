@@ -1,8 +1,9 @@
 """
 app.py
 ------
-VicSherlock — Flask web server.
+VicSherlock — Conversation-to-Knowledge AI agent for Vic.ai.
 Upload a video recording → get a structured step-by-step guide with screenshots.
+Also handles Slack bot events for proactive documentation detection.
 
 Run with: python app.py
 Then open http://localhost:5000
