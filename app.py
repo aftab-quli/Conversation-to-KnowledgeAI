@@ -481,6 +481,31 @@ def slack_events():
             channel = event.get("channel", "")
             user_id = event.get("user", "")
 
+            # Handle "new chat" / "start fresh" commands
+            if user_text and user_text.lower() in ("new chat", "start fresh", "clear", "reset"):
+                try:
+                    from slack_sdk import WebClient
+                    slack = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
+                    slack.chat_postMessage(
+                        channel=channel,
+                        text=(
+                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                            ":mag: *VicSherlock — New Session*\n"
+                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                            "Hey! I'm VicSherlock, your Conversation-to-Knowledge AI.\n\n"
+                            "I scan Slack channels for documentation-worthy conversations and help keep your team's knowledge up to date.\n\n"
+                            "Try asking me:\n"
+                            "• _\"What have you found recently?\"_\n"
+                            "• _\"What did Katie Roy say about VicPay?\"_\n"
+                            "• _\"Scan channels for updates\"_\n\n"
+                            "Or send me a doc/PDF and I'll help update it!"
+                        ),
+                        mrkdwn=True
+                    )
+                except Exception as e:
+                    logger.error(f"Error sending new chat message: {e}")
+                return jsonify({"ok": True}), 200
+
             if user_text and channel:
                 # Process in background thread so we respond to Slack within 3s
                 def reply_with_claude(msg_text=user_text, msg_channel=channel, msg_user=user_id):
