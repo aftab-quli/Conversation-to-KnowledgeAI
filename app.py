@@ -579,34 +579,73 @@ def slack_events():
                         client = AnthropicClient(api_key=anthropic_key)
                         slack = WebClient(token=slack_token)
 
-                        response = client.messages.create(
-                            model="claude-sonnet-4-20250514",
-                            max_tokens=1024,
-                            system="""You are VicSherlock, a Conversation-to-Knowledge AI bot for Vic.ai.
+                        # --- Live Slack scan: fetch recent messages from channels ---
+                        live_findings = ""
+                        try:
+                            channels_to_scan = []
+                            # Get channels the bot is in
+                            ch_result = slack.conversations_list(types="public_channel,private_channel", limit=50)
+                            for ch in ch_result.get("channels", []):
+                                if ch.get("is_member"):
+                                    channels_to_scan.append({"id": ch["id"], "name": ch.get("name", "unknown")})
+
+                            scan_snippets = []
+                            import time
+                            one_week_ago = str(time.time() - 7 * 86400)  # last 7 days
+
+                            for ch_info in channels_to_scan[:10]:  # scan up to 10 channels
+                                try:
+                                    history = slack.conversations_history(
+                                        channel=ch_info["id"],
+                                        oldest=one_week_ago,
+                                        limit=15
+                                    )
+                                    for msg in history.get("messages", []):
+                                        text = msg.get("text", "").strip()
+                                        if len(text) > 50:  # skip short messages
+                                            user_info_id = msg.get("user", "unknown")
+                                            # Try to get user name
+                                            try:
+                                                u = slack.users_info(user=user_info_id)
+                                                username = u["user"]["real_name"]
+                                            except Exception:
+                                                username = user_info_id
+                                            ts = msg.get("ts", "")
+                                            scan_snippets.append(
+                                                f"[#{ch_info['name']}] {username}: {text[:500]}"
+                                            )
+                                except Exception as ch_err:
+                                    logger.warning(f"Could not scan #{ch_info['name']}: {ch_err}")
+
+                            if scan_snippets:
+                                live_findings = "RECENT MESSAGES FROM SLACK CHANNELS (last 7 days):\n\n" + "\n\n".join(scan_snippets[:30])
+                            else:
+                                live_findings = "No recent messages found in scanned channels."
+
+                        except Exception as scan_err:
+                            logger.error(f"Error during live scan: {scan_err}")
+                            live_findings = "Could not perform live scan at this time."
+
+                        system_prompt = f"""You are VicSherlock, a Conversation-to-Knowledge AI bot for Vic.ai.
 Your job is to monitor Slack conversations for documentation-worthy content and help keep team knowledge up to date.
 
 You actively scan Slack channels for tutorials, process changes, troubleshooting threads, and other documentation-worthy conversations, then alert the right people to update docs.
 You can also convert video recordings into step-by-step implementation guides with screenshots at https://vicsherlock.onrender.com
 
-RECENT FINDINGS FROM YOUR CHANNEL SCANS:
+{live_findings}
 
-1. In #project_vicpaygolive, Katie Roy (on Jan 7, 2026) announced a process change:
-   - The implementations team will now own uploading the logo and signature for VicPay implementations
-   - The ability to upload the signature and logo is available in VicAdmin
-   - She mentioned she will update the Guru card, but is offboarding that responsibility to the implementation team
-   - The relevant Guru card is: "Implementing Payments (VicPay)"
-   - Action needed: Update the Implementing Payments (VicPay) doc in Guru to reflect the new ownership of logo/signature uploads
+Based on the messages above, identify documentation-worthy content: process changes, tutorials, troubleshooting guides, new procedures, training content, or anything that should be captured in a knowledge base or Guru card.
 
-2. You also found a VicPay implementation training recording where a team member walked through:
-   - Setting up the cash account / GL account in Sage Intacct UAT
-   - Creating a sub-ledger writer for the cash account
-   - Enabling payments in UAT
-   - Configuring VicPay settings
-
-When users ask about recent findings or Katie Roy's messages, share these details.
+When users ask about recent findings, analyze the real messages above and share what you've found.
 When users ask you to update documentation or Guru cards, acknowledge the request and explain what steps are needed.
+When users ask about a specific person or topic, search through the messages above for relevant content.
 
-Be friendly, concise, and helpful. Use emoji sparingly.""",
+Be friendly, concise, and helpful. Use emoji sparingly."""
+
+                        response = client.messages.create(
+                            model="claude-sonnet-4-20250514",
+                            max_tokens=1024,
+                            system=system_prompt,
                             messages=[{"role": "user", "content": msg_text}],
                         )
                         reply = response.content[0].text
