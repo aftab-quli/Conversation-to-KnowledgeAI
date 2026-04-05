@@ -76,7 +76,7 @@ class GongClient:
             return []
 
     def get_transcripts(self, call_ids):
-        """Fetch transcripts for given call IDs."""
+        """Fetch FULL transcripts for given call IDs."""
         if not self.is_configured or not call_ids:
             return {}
 
@@ -84,8 +84,8 @@ class GongClient:
             resp = requests.post(
                 f"{self.base_url}/calls/transcript",
                 auth=self._auth(),
-                json={"filter": {"callIds": call_ids[:5]}},  # limit to 5 to keep it light
-                timeout=15,
+                json={"filter": {"callIds": call_ids[:5]}},
+                timeout=30,
             )
             resp.raise_for_status()
             data = resp.json()
@@ -94,7 +94,7 @@ class GongClient:
             for ct in data.get("callTranscripts", []):
                 call_id = ct.get("callId", "")
                 sentences = ct.get("transcript", [])
-                # Build readable transcript
+                # Build readable transcript — FULL, not truncated
                 lines = []
                 for s in sentences:
                     speaker = s.get("speakerName", s.get("speakerId", "Unknown"))
@@ -103,20 +103,20 @@ class GongClient:
                         lines.append(f"{speaker}: {text.strip()}")
                 transcripts[call_id] = "\n".join(lines)
 
-            logger.info(f"Gong: fetched {len(transcripts)} transcripts")
+            logger.info(f"Gong: fetched {len(transcripts)} transcripts (full)")
             return transcripts
         except Exception as e:
             logger.error(f"Gong API error (transcripts): {e}")
             return {}
 
     def get_recent_call_summaries(self, days=30, limit=10):
-        """Get a summary of recent calls with participant info and topics — lightweight."""
+        """Get recent calls with FULL transcripts for analysis."""
         calls = self.get_recent_calls(days=days, limit=limit)
         if not calls:
             return []
 
         summaries = []
-        # Get transcripts for the most recent calls
+        # Get FULL transcripts for the most recent calls
         call_ids = [c.get("metaData", {}).get("id", "") for c in calls if c.get("metaData", {}).get("id")]
         transcripts = self.get_transcripts(call_ids[:5])
 
@@ -133,44 +133,64 @@ class GongClient:
             topics = [t.get("name", "") for t in call.get("content", {}).get("topics", [])]
             trackers = [t.get("name", "") for t in call.get("content", {}).get("trackers", [])]
 
-            transcript_preview = transcripts.get(call_id, "")[:500]
+            # FULL transcript — no truncation
+            full_transcript = transcripts.get(call_id, "")
 
             summaries.append({
                 "title": title,
                 "date": started[:10] if started else "Unknown",
                 "duration_min": round(duration / 60) if duration else 0,
-                "participants": participants[:5],
-                "topics": topics[:5],
-                "trackers": trackers[:5],
-                "transcript_preview": transcript_preview,
+                "participants": participants[:10],
+                "topics": topics[:10],
+                "trackers": trackers[:10],
+                "transcript": full_transcript,
             })
 
         return summaries
 
 
 def get_gong_findings():
-    """Get formatted Gong findings for the VicSherlock system prompt."""
+    """Get formatted Gong findings with FULL transcripts for VicSherlock system prompt."""
     client = GongClient()
     if not client.is_configured:
         return ""
 
     try:
-        summaries = client.get_recent_call_summaries(days=30, limit=10)
+        summaries = client.get_recent_call_summaries(days=30, limit=5)
         if not summaries:
             return "GONG CALLS: No recent calls found in the last 30 days."
 
-        lines = ["RECENT GONG CALLS (last 30 days):\n"]
+        lines = ["RECENT GONG CALLS WITH FULL TRANSCRIPTS (last 30 days):\n"]
+        total_chars = 0
+        max_total = 60000  # Stay within Claude's context limits
+
         for s in summaries:
-            lines.append(f"Call: {s['title']} ({s['date']}, {s['duration_min']} min)")
+            call_header = f"\n{'='*60}\nCall: {s['title']} ({s['date']}, {s['duration_min']} min)"
             if s['participants']:
-                lines.append(f"  Participants: {', '.join(s['participants'])}")
+                call_header += f"\nParticipants: {', '.join(s['participants'])}"
             if s['topics']:
-                lines.append(f"  Topics: {', '.join(s['topics'])}")
+                call_header += f"\nTopics: {', '.join(s['topics'])}"
             if s['trackers']:
-                lines.append(f"  Trackers: {', '.join(s['trackers'])}")
-            if s['transcript_preview']:
-                lines.append(f"  Transcript snippet: {s['transcript_preview'][:300]}")
+                call_header += f"\nTrackers: {', '.join(s['trackers'])}"
+
+            lines.append(call_header)
+
+            if s['transcript']:
+                # Include as much transcript as possible within limits
+                remaining = max_total - total_chars
+                transcript_text = s['transcript']
+                if len(transcript_text) > remaining:
+                    transcript_text = transcript_text[:remaining] + "\n[... transcript truncated due to length ...]"
+                lines.append(f"\nFULL TRANSCRIPT:\n{transcript_text}")
+                total_chars += len(transcript_text)
+            else:
+                lines.append("\n(No transcript available for this call)")
+
             lines.append("")
+
+            if total_chars >= max_total:
+                lines.append("[Remaining calls omitted due to context limits]")
+                break
 
         return "\n".join(lines)
     except Exception as e:
