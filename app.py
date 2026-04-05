@@ -235,6 +235,7 @@ def generate_from_text():
     def run_text_job(_job_id=job_id, _transcript=transcript, _instructions=instructions, _doc_type=doc_type):
         try:
             from anthropic import Anthropic as _AC
+            import re as _re
 
             jobs[_job_id]["step"] = "Analyzing transcript with Claude..."
             jobs[_job_id]["progress"] = 30
@@ -251,7 +252,7 @@ def generate_from_text():
             response = client.messages.create(
                 model="claude-sonnet-4-20250514",
                 max_tokens=4096,
-                system=f"You are an expert technical writer. {type_instruction} Format the output in clean Markdown.",
+                system=f"You are an expert technical writer. {type_instruction} Format the output in clean Markdown with proper headings (## and ###), numbered lists, and bold key terms.",
                 messages=[{
                     "role": "user",
                     "content": f"Instructions: {_instructions}\n\nTranscript/Source Content:\n{_transcript[:15000]}"
@@ -259,20 +260,278 @@ def generate_from_text():
             )
             guide_text = response.content[0].text
 
-            jobs[_job_id]["step"] = "Building document..."
+            jobs[_job_id]["step"] = "Building branded document..."
             jobs[_job_id]["progress"] = 70
 
-            # Save as markdown file
-            output_filename = f"guide_{_job_id[:8]}.md"
+            # Convert markdown to Vic.ai branded HTML
+            import markdown as _md
+            guide_html_body = _md.markdown(guide_text, extensions=["tables", "fenced_code"])
+
+            # Count steps
+            step_count = guide_text.count("\n## ") + guide_text.count("\n### ") + guide_text.count("\n1.") + guide_text.count("\n- **Step")
+
+            # Extract title from first heading
+            title_match = _re.search(r'^#\s+(.+)', guide_text, _re.MULTILINE)
+            guide_title = title_match.group(1) if title_match else _instructions[:60]
+
+            branded_html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{guide_title} — VicSherlock</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Open+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {{
+    --vic-navy: #1c2043;
+    --vic-blue: #4a6cf7;
+    --vic-light-blue: #6b8cff;
+    --vic-dark: #0f1117;
+    --vic-gray: #f4f5f7;
+    --vic-border: #e2e4e9;
+    --vic-text: #2d3142;
+    --vic-text-light: #636b83;
+    --vic-accent: #7c5cfc;
+    --vic-gradient: linear-gradient(135deg, #4a6cf7 0%, #7c5cfc 100%);
+  }}
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{
+    font-family: 'Open Sans', sans-serif;
+    color: var(--vic-text);
+    background: #fff;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }}
+  .header {{
+    background: var(--vic-navy);
+    padding: 28px 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }}
+  .header-left {{
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }}
+  .vic-logo {{
+    height: 32px;
+  }}
+  .header-divider {{
+    width: 1px;
+    height: 28px;
+    background: rgba(255,255,255,0.2);
+  }}
+  .sherlock-badge {{
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: rgba(255,255,255,0.85);
+    font-family: 'Poppins', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+  }}
+  .sherlock-badge img {{
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+  }}
+  .header-meta {{
+    color: rgba(255,255,255,0.5);
+    font-size: 12px;
+    font-family: 'Poppins', sans-serif;
+  }}
+  .title-section {{
+    background: var(--vic-gradient);
+    padding: 48px 40px 52px;
+    color: white;
+  }}
+  .title-section h1 {{
+    font-family: 'Poppins', sans-serif;
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 12px;
+    line-height: 1.3;
+  }}
+  .title-meta {{
+    display: flex;
+    gap: 24px;
+    font-size: 14px;
+    opacity: 0.85;
+  }}
+  .title-meta span {{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }}
+  .content {{
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 48px 40px 80px;
+  }}
+  .content h1 {{
+    font-family: 'Poppins', sans-serif;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--vic-navy);
+    margin: 40px 0 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--vic-blue);
+  }}
+  .content h2 {{
+    font-family: 'Poppins', sans-serif;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--vic-navy);
+    margin: 36px 0 14px;
+    padding-left: 14px;
+    border-left: 4px solid var(--vic-blue);
+  }}
+  .content h3 {{
+    font-family: 'Poppins', sans-serif;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--vic-text);
+    margin: 28px 0 10px;
+  }}
+  .content p {{
+    margin-bottom: 16px;
+    font-size: 15px;
+  }}
+  .content ul, .content ol {{
+    margin: 12px 0 20px 24px;
+    font-size: 15px;
+  }}
+  .content li {{
+    margin-bottom: 8px;
+    padding-left: 4px;
+  }}
+  .content ol > li {{
+    padding-left: 6px;
+  }}
+  .content strong {{
+    color: var(--vic-navy);
+    font-weight: 600;
+  }}
+  .content code {{
+    background: var(--vic-gray);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--vic-accent);
+  }}
+  .content pre {{
+    background: var(--vic-navy);
+    color: #e8e8e8;
+    padding: 20px;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 16px 0 24px;
+    font-size: 13px;
+    line-height: 1.5;
+  }}
+  .content pre code {{
+    background: none;
+    padding: 0;
+    color: inherit;
+  }}
+  .content blockquote {{
+    border-left: 4px solid var(--vic-accent);
+    background: #f8f7ff;
+    padding: 16px 20px;
+    margin: 16px 0 24px;
+    border-radius: 0 8px 8px 0;
+    font-style: italic;
+    color: var(--vic-text-light);
+  }}
+  .content table {{
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0 24px;
+    font-size: 14px;
+  }}
+  .content th {{
+    background: var(--vic-navy);
+    color: white;
+    padding: 12px 16px;
+    text-align: left;
+    font-family: 'Poppins', sans-serif;
+    font-weight: 500;
+  }}
+  .content td {{
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--vic-border);
+  }}
+  .content tr:nth-child(even) td {{
+    background: var(--vic-gray);
+  }}
+  .content hr {{
+    border: none;
+    height: 1px;
+    background: var(--vic-border);
+    margin: 32px 0;
+  }}
+  .footer {{
+    background: var(--vic-gray);
+    border-top: 1px solid var(--vic-border);
+    padding: 24px 40px;
+    text-align: center;
+    font-size: 12px;
+    color: var(--vic-text-light);
+    font-family: 'Poppins', sans-serif;
+  }}
+  .footer a {{
+    color: var(--vic-blue);
+    text-decoration: none;
+  }}
+  @media print {{
+    .header {{ padding: 20px 30px; }}
+    .title-section {{ padding: 30px; }}
+    .content {{ padding: 30px; }}
+  }}
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <svg class="vic-logo" viewBox="0 0 80 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <text x="0" y="24" font-family="Poppins, sans-serif" font-size="22" font-weight="700" fill="white">Vic.ai</text>
+      </svg>
+      <div class="header-divider"></div>
+      <div class="sherlock-badge">
+        <svg viewBox="0 0 28 28" width="28" height="28"><circle cx="14" cy="14" r="14" fill="#f5c518"/><text x="14" y="19" text-anchor="middle" font-size="14">🔍</text></svg>
+        VicSherlock
+      </div>
+    </div>
+    <div class="header-meta">Generated by VicSherlock AI</div>
+  </div>
+  <div class="title-section">
+    <h1>{guide_title}</h1>
+    <div class="title-meta">
+      <span>📋 {_doc_type.replace("-", " ").title()}</span>
+      <span>📄 {step_count} sections</span>
+      <span>🤖 AI-Generated Guide</span>
+    </div>
+  </div>
+  <div class="content">
+    {guide_html_body}
+  </div>
+  <div class="footer">
+    Generated by <a href="https://vicsherlock.onrender.com">VicSherlock</a> — Conversation-to-Knowledge AI by <a href="https://vic.ai">Vic.ai</a>
+  </div>
+</body>
+</html>'''
+
+            output_filename = f"guide_{_job_id[:8]}.html"
             output_path = OUTPUT_DIR / output_filename
             with open(output_path, "w") as f:
-                f.write(guide_text)
+                f.write(branded_html)
 
             jobs[_job_id]["step"] = "Done!"
             jobs[_job_id]["progress"] = 100
             jobs[_job_id]["status"] = "done"
-            jobs[_job_id]["file"] = {"name": f"Guide — {_instructions[:60]}", "filename": output_filename}
-            jobs[_job_id]["step_count"] = guide_text.count("\n## ") + guide_text.count("\n### ") + guide_text.count("\n1.") + guide_text.count("\n- **Step")
+            jobs[_job_id]["file"] = {"name": f"{guide_title}", "filename": output_filename}
+            jobs[_job_id]["step_count"] = step_count
 
         except Exception as e:
             logger.error(f"Error in text job: {e}")
