@@ -511,13 +511,31 @@ def slack_events():
                 # Send a fun "thinking" message immediately
                 import random
                 thinking_messages = [
-                    ":mag: _The game is afoot! Deducing your answer..._",
+                    ":mag: _The game is afoot! Scanning 221B channels of data..._",
                     ":smoking: _Elementary... give me a moment to consult my mind palace._",
-                    ":male-detective: _Sherlock is on the case. One moment..._",
-                    ":mag_right: _Investigating the evidence... this won't take long._",
-                    ":brain: _Retreating to my mind palace. Back in a flash..._",
-                    ":memo: _Ah, an interesting query! Let me examine the clues..._",
-                    ":sleuth_or_spy: _No mystery too great, no doc too small. Thinking..._",
+                    ":male-detective: _Sherlock is on the case. Dusting for digital fingerprints..._",
+                    ":mag_right: _Investigating the evidence... cross-referencing witness statements..._",
+                    ":brain: _Retreating to my mind palace. It's bigger on the inside..._",
+                    ":memo: _Ah, an interesting query! *adjusts deerstalker* Let me examine the clues..._",
+                    ":sleuth_or_spy: _No mystery too great, no doc too small. Interrogating the data..._",
+                    ":coffee: _Brewing deductions... this case requires extra caffeine._",
+                    ":dart: _Zeroing in on the truth. Hold my magnifying glass..._",
+                    ":books: _Flipping through the archives... I've seen this pattern before._",
+                    ":bulb: _A-ha! Something's forming... let me piece it together._",
+                    ":telescope: _Observing from a distance... the details are coming into focus._",
+                    ":world_map: _Following the trail of breadcrumbs across your workspace..._",
+                    ":old_key: _Unlocking the vault of knowledge. The cipher is almost cracked..._",
+                    ":violin: _*plays violin pensively*... the answer is revealing itself._",
+                    ":zap: _My neurons are firing! Correlating evidence across multiple sources..._",
+                    ":hourglass_flowing_sand: _Patience, dear Watson. Genius takes a moment._",
+                    ":detective: _*puffs pipe thoughtfully*... I have a theory forming._",
+                    ":newspaper: _Reading between the lines... literally. That's my whole job._",
+                    ":crystal_ball: _I don't need a crystal ball, I have Gong transcripts and Slack messages._",
+                    ":jigsaw: _Found a piece of the puzzle. Now finding where it fits..._",
+                    ":microscope: _Examining the evidence at 400x magnification..._",
+                    ":tophat: _*tips hat* One moment while I deduce brilliantly._",
+                    ":fire: _Hot on the trail! The game is most definitely afoot._",
+                    ":lock: _Cracking the case... and by case I mean your Gong calls._",
                 ]
                 try:
                     from slack_sdk import WebClient as _WC
